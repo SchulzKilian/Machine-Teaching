@@ -1,16 +1,18 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+#from tfds.datasets import stanford_dogs
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-from GuidedCNN import GuidedCNN
+#from GuidedCNN import GuidedCNN
 from StandardCNN import ResNet50
+from MachinePunishment import PunisherLoss
 
 
 # Define training parameters
 batch_size = 64
 learning_rate = 0.001
-num_epochs = 10
+num_epochs = 3
 
 # Load data
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
@@ -23,11 +25,11 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
 # Train each model
-models = [StandardCNN()]
+models = [ResNet50(10)]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.CrossEntropyLoss()
-    model.train_model(model, train_loader, criterion, optimizer, num_epochs)
+    criterion = PunisherLoss(0,train_dataset)
+    model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model
 def test_model(model, test_loader):
