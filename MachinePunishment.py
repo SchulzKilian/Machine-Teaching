@@ -41,11 +41,11 @@ class PunisherLoss(nn.Module):
         # Create a new window to display the images for marking
         window = tk.Toplevel(root)
         window.title("Mark Pixels")
-        window.geometry("800x600")  # Set the window size
+        window.geometry("800x800")  # Set the window size
 
         # Create a canvas to display the image
         canvas = tk.Canvas(window, bg="white")
-        canvas.place(relwidth=1, relheight=1)
+        canvas.place(relwidth=10, relheight=10)
 
         # Load and display each image on the canvas
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
@@ -57,7 +57,18 @@ class PunisherLoss(nn.Module):
             image_pil = Image.fromarray(image_np.astype(np.uint8))
 
             # Convert the PIL Image to a Tkinter-compatible format
-            image_tk = ImageTk.PhotoImage(image_pil)
+            image_tk = ImageTk.PhotoImage(image_pil,size=(800*600))
+            width, height = image_pil.size
+
+            # Determine the scaling factor to make the image larger
+            scaling_factor = 800//max(width,height)  # Adjust this value as needed
+
+            # Calculate the new size
+            new_width = width * scaling_factor
+            new_height = height * scaling_factor
+
+            # Resize the image
+            image_tk = ImageTk.PhotoImage(image_pil.resize((new_width, new_height)))
 
             # Display the image on the canvas
             canvas.create_image(0, 0, anchor=tk.NW, image=image_tk)
