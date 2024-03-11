@@ -31,50 +31,51 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        # Compute gradients of the loss
-        self.zero_grad()  # Clear accumulated gradients
-        self.backward()  # Backpropagation to compute gradients
-
-        for param in self.parameters():
-
-            param.data -= 0.01 * param.grad  
+        return None
 
 
-    def custom_loss_function(self, inputs, targets, training_dataset):
+    def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
         root = tk.Tk()
         root.title("Mark Pixels")
 
-        # Convert the input tensor to a NumPy array
-        image_np = inputs.squeeze().numpy() * 255  # Assuming grayscale image, and un-normalizing
-
-        # Convert the NumPy array to a PIL Image
-        image_pil = Image.fromarray(image_np.astype(np.uint8))
-
-        image_tk = ImageTk.PhotoImage(image_pil)
-
-        def mark_pixels(event):
-            x, y = event.x, event.y
-            self.marked_pixels.append((x,y))
-            image_draw.point((x, y), fill='red')
-
-        # Create a new window to display the image for marking
+        # Create a new window to display the images for marking
         window = tk.Toplevel(root)
         window.title("Mark Pixels")
-        canvas = tk.Canvas(window, width=image_np.shape[1], height=image_np.shape[0])
-        canvas.pack()
-        canvas.create_image(0, 0, anchor=tk.NW, image=image_tk)
+        window.geometry("800x600")  # Set the window size
 
-        image_draw = ImageDraw.Draw(image_pil)
-        canvas.bind("<Button-1>", mark_pixels)
+        # Create a canvas to display the image
+        canvas = tk.Canvas(window, bg="white")
+        canvas.place(relwidth=1, relheight=1)
 
+        # Load and display each image on the canvas
+        for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
+            # Get the image and convert it to a NumPy array
+            image, _ = training_dataset[idx]
+            image_np = image.squeeze().detach().numpy() * 255  # Assuming grayscale image, and un-normalizing
+
+            # Convert the NumPy array to a PIL Image
+            image_pil = Image.fromarray(image_np.astype(np.uint8))
+
+            # Convert the PIL Image to a Tkinter-compatible format
+            image_tk = ImageTk.PhotoImage(image_pil)
+
+            # Display the image on the canvas
+            canvas.create_image(0, 0, anchor=tk.NW, image=image_tk)
+
+            # Prevent the image_tk from being garbage-collected prematurely
+            canvas.image = image_tk
+
+            def mark_pixels(event, canvas=canvas):
+                x, y = event.x, event.y
+                self.marked_pixels.append((x, y))
+
+            canvas.bind("<Button-1>", mark_pixels)
 
         def close_window():
             root.destroy()
 
-
-        close_button = tk.Button(root, text="Continue", command=close_window)
-        close_button.pack()
+        close_button = tk.Button(window, text="Continue", command=close_window)
+        close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
 
         root.mainloop()
         return self
-
