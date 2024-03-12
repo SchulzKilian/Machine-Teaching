@@ -10,10 +10,11 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
-    def __init__(self, threshold: int, training_dataset, default_loss = None):
+    def __init__(self, threshold: int, training_dataset, model, default_loss = None):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
         self.epochs = []
+        self.model = model
         self.marked_pixels = set()
         self.radius = 15
         self.training_dataset = training_dataset
@@ -25,9 +26,9 @@ class PunisherLoss(nn.Module):
     def setradius(self, radius):
         self.radius = radius
 
-    def  forward(self, inputs, targets, epoch):
+    def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch+1%self.threshold==0 and epoch not in self.epochs:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch is not 0:
             print("custom")
             self.epochs.append(epoch)
             return self.custom_loss_function(inputs, targets, self.training_dataset)
@@ -58,33 +59,43 @@ class PunisherLoss(nn.Module):
 
         # Load and display each image on the canvas
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
-            # Get the image and convert it to a NumPy array
-            image, _ = training_dataset[idx]
+            image, label = training_dataset[idx]
             image_np = image.squeeze().detach().numpy() * 255  # Assuming grayscale image, and un-normalizing
 
             # Convert the NumPy array to a PIL Image
             image_pil = Image.fromarray(image_np.astype(np.uint8))
 
+            # Calculate the saliency map for the current image
+            saliency_map = self.compute_saliency_map(image.unsqueeze(0),label)  # Assuming 'model' is your trained model
+            
+            # Convert the saliency map to a PIL Image
+            saliency_map_pil = Image.fromarray((saliency_map * 255).astype(np.uint8))
+
             # Convert the PIL Image to a Tkinter-compatible format
-            image_tk = ImageTk.PhotoImage(image_pil)
-            width, height = image_pil.size
+            width, height = saliency_map_pil.size
 
-            # Determine the scaling factor to make the image larger
-            scaling_factor = 800//max(width, height)  # Adjust this value as needed
-
-            # Calculate the new size
+            scaling_factor = 800//max(width,height)
             new_width = width * scaling_factor
             new_height = height * scaling_factor
-
+            print("height from "+ str(height)+ " to " +str(new_height))
+            print("width from "+ str(width)+ " to " +str(new_width))
             # Resize the image
-            image_tk = ImageTk.PhotoImage(image_pil.resize((new_width, new_height)))
+            saliency_map_tk = ImageTk.PhotoImage(saliency_map_pil.resize((new_width, new_height)))
 
-            # Display the image on the canvas
-            canvas.create_image(0, 0, anchor=tk.NW, image=image_tk)
+            # Display the saliency map on the canvas
+            canvas.create_image(0, 0, anchor=tk.NW, image=saliency_map_tk)
 
-            # Create an image buffer to draw on
+            # Create the right buffert
             drawn_image = Image.new("RGB", (new_width, new_height), "white")
             draw = ImageDraw.Draw(drawn_image)
+
+            # Prevent the saliency_map_tk from being garbage-collected prematurely
+            canvas.saliency_map_tk = saliency_map_tk
+
+
+
+
+
 
 
             def drag(event):
@@ -112,3 +123,30 @@ class PunisherLoss(nn.Module):
 
         root.mainloop()
         return self
+    
+
+
+
+
+
+
+    def compute_saliency_map(self, input_data, label):
+        self.model.eval()  # Set the model to evaluation mode
+        input_data.requires_grad = True  # Set requires_grad to True to compute gradients
+        print("The label is "+ str(label))
+        output = self.model(input_data)
+        target = torch.tensor([label])
+        loss = self.default_loss(output, target)
+
+        # Zero gradients to clear any previous gradients
+        self.model.zero_grad()
+
+        # Backpropagate to compute gradients
+        loss.backward()
+        # Compute the gradients with respect to the input
+        saliency_map = input_data.grad.abs().squeeze().detach().cpu().numpy()
+
+        # Normalize the gradients
+        saliency_map /= saliency_map.max()
+        
+        return saliency_map

@@ -3,23 +3,41 @@ import torch.nn as nn
 import torch.optim as optim
 #from tfds.datasets import stanford_dogs
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 #from GuidedCNN import GuidedCNN
 from StandardCNN import ResNet50
 from MachinePunishment import PunisherLoss
 
 
+
+
+
 # Define training parameters
-batch_size = 4
+batch_size = 16
 learning_rate = 0.001
 num_epochs = 3
+data_size = 5000
+
+
+
+class SubsetDataset(Dataset):
+    def __init__(self, dataset, num_samples):
+        self.dataset = dataset
+        self.num_samples = num_samples
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, idx):
+        return self.dataset[idx]
 
 # Load data
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+subset_train_dataset = SubsetDataset(train_dataset, data_size)
 test_dataset = datasets.MNIST(root='./data', train=False, transform=transform)
 
-train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(subset_train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
@@ -28,7 +46,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 models = [ResNet50(10)]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(2,train_dataset)
+    criterion = PunisherLoss(2,train_dataset,model)
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model
