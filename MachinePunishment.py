@@ -133,18 +133,26 @@ class PunisherLoss(nn.Module):
     def compute_saliency_map(self, input_data, label):
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
-        print("The label is "+ str(label))
-        output = self.model(input_data)
-        target = torch.tensor([label])
-        loss = self.default_loss(output, target)
+        print("The label is " + str(label))
+        
+        # Forward pass
+        outputs = self.model(input_data)  
 
-        # Zero gradients to clear any previous gradients
+        target = torch.zeros(outputs.size(), dtype=torch.float)
+        target[0][label] = 1.0
+        loss = self.default_loss(outputs, target)
+
         self.model.zero_grad()
 
         # Backpropagate to compute gradients
         loss.backward()
         # Compute the gradients with respect to the input
-        saliency_map = input_data.grad.abs().squeeze().detach().cpu().numpy()
+        gradients = input_data.grad.clone().detach()
+
+        # Set negative gradients to zero
+        gradients[gradients < 0] = 0
+
+        saliency_map = gradients.abs().squeeze().cpu().numpy()
 
         # Normalize the gradients
         saliency_map /= saliency_map.max()

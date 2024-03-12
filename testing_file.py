@@ -16,7 +16,7 @@ from MachinePunishment import PunisherLoss
 batch_size = 16
 learning_rate = 0.001
 num_epochs = 3
-data_size = 5000
+data_size = 500
 
 
 
@@ -46,7 +46,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 models = [ResNet50(10)]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(2,train_dataset,model)
+    criterion = PunisherLoss(2,subset_train_dataset,model)
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model
