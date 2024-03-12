@@ -6,6 +6,7 @@ import tkinter as tk
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import torch.nn.functional as F
 
 
 class PunisherLoss(nn.Module):
@@ -28,7 +29,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch is not 0:
+        if epoch%self.threshold==0 and epoch not in self.epochs:
             print("custom")
             self.epochs.append(epoch)
             return self.custom_loss_function(inputs, targets, self.training_dataset)
@@ -146,15 +147,41 @@ class PunisherLoss(nn.Module):
 
         # Backpropagate to compute gradients
         loss.backward()
-        # Compute the gradients with respect to the input
+        
+        # Get the gradients with respect to the input
         gradients = input_data.grad.clone().detach()
 
         # Set negative gradients to zero
         gradients[gradients < 0] = 0
 
-        saliency_map = gradients.abs().squeeze().cpu().numpy()
+        # Get the final convolutional layer
+        final_conv_layer = self.get_final_conv_layer()  # Adjust this according to your model
 
-        # Normalize the gradients
+        # Compute activations of the final convolutional layer
+        activations = final_conv_layer(input_data.repeat(1, 512, 1, 1)).detach()
+
+        # Compute the importance weights
+        importance_weights = torch.mean(gradients, dim=(2, 3), keepdim=True)
+
+        # Weighted activations
+        weighted_activations = F.relu(torch.sum(activations * importance_weights, dim=1, keepdim=True))
+
+        # Upsample to match the size of the input_data
+        saliency_map = F.interpolate(weighted_activations, size=input_data.shape[2:], mode='bilinear', align_corners=False)
+
+        # Convert to numpy array
+        saliency_map = saliency_map.squeeze().cpu().numpy()
+
+        # Normalize the saliency map
         saliency_map /= saliency_map.max()
         
         return saliency_map
+    
+
+    def get_final_conv_layer(self):
+        # Find the last convolutional layer in the model's architecture
+        final_conv_layer = None
+        for module_name, module in self.model.named_modules():
+            if isinstance(module, nn.Conv2d):
+                final_conv_layer = module
+        return final_conv_layer
