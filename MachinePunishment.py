@@ -63,10 +63,28 @@ class PunisherLoss(nn.Module):
             image, label = training_dataset[idx]
             image_np = image.squeeze().detach().numpy() * 255  # Assuming grayscale image, and un-normalizing
 
-            # Convert the NumPy array to a PIL Image
+            if len(image_np.shape) == 2:  # Grayscale image
+
+                image_np = (image_np * 255).astype(np.uint8)
+
+                image_pil = Image.fromarray(image_np, 'L')
+            elif len(image_np.shape) == 3: 
+
+                image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
+
+                image_pil = Image.fromarray(image_np, 'RGB') 
+
+            elif len(image_np.shape) == 4 and image_np.shape[0] == 4:  # RGBA image
+                # Unnormalize the RGBA image
+                image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
+                # Convert the NumPy array to an RGBA PIL Image
+                image_pil = Image.fromarray(image_np, 'RGBA') 
+            else:
+                raise ValueError("Input image must have 2 or 3 dimensions.")
+
             image_pil = Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
-            # Calculate the saliency map for the current image
+
             saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
 
             # Convert the PIL Image to a Tkinter-compatible format

@@ -16,7 +16,8 @@ from MachinePunishment import PunisherLoss
 batch_size = 16
 learning_rate = 0.001
 num_epochs = 3
-data_size = 5
+data_size = 2
+arg = "numbers"
 
 
 
@@ -32,10 +33,41 @@ class SubsetDataset(Dataset):
         return self.dataset[idx]
 
 # Load data
-transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
-train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+
+if arg == "numbers":
+    channels = 1
+    classes = 10
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+    test_dataset = datasets.MNIST(root='./data', train=False, transform=transform)
+    train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+
+elif arg == "cars":
+    channels = 3
+    classes = 196
+    transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize the images to match the input size of ResNet50
+    transforms.ToTensor(),          # Convert the images to PyTorch tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize the images
+])
+    test_dataset = datasets.StanfordCars(root='./cars', split= "test", transform=transform, download = True)
+    train_dataset = datasets.StanfordCars(root='./cars', split="train",transform=transform, download=True)
+
+elif arg == "pets":
+    channels = 3
+    classes = 37
+    transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize the images to match the input size of ResNet50
+    transforms.ToTensor(),          # Convert the images to PyTorch tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize the images
+])
+    test_dataset = datasets.OxfordIIITPet(root='./pets', split= "test", transform=transform, download = True)
+    train_dataset = datasets.OxfordIIITPet(root='./pets',transform=transform, download=True)
+
 subset_train_dataset = SubsetDataset(train_dataset, data_size)
-test_dataset = datasets.MNIST(root='./data', train=False, transform=transform)
+
+
+
+
 
 
 train_loader = DataLoader(subset_train_dataset, batch_size=batch_size, shuffle=True)
@@ -43,7 +75,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
 # Train each model
-models = [ResNet50(10,1), ]
+models = [ResNet50(classes,channels), ]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = PunisherLoss(2,subset_train_dataset,model)
