@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageOps
 import tkinter as tk
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,7 +29,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch is not 0:
             print("custom")
             self.epochs.append(epoch)
             return self.custom_loss_function(inputs, targets, self.training_dataset)
@@ -64,16 +64,39 @@ class PunisherLoss(nn.Module):
             image_np = image.squeeze().detach().numpy() * 255  # Assuming grayscale image, and un-normalizing
 
             # Convert the NumPy array to a PIL Image
-            image_pil = Image.fromarray(image_np.astype(np.uint8))
+            image_pil = Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
             # Calculate the saliency map for the current image
-            saliency_map = self.compute_saliency_map(image.unsqueeze(0),label)  # Assuming 'model' is your trained model
-            
-            # Convert the saliency map to a PIL Image
-            saliency_map_pil = Image.fromarray((saliency_map * 255).astype(np.uint8))
+            saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
 
             # Convert the PIL Image to a Tkinter-compatible format
-            width, height = saliency_map_pil.size
+            width, height = image_pil.size
+
+            scaling_factor = 800//max(width,height)
+
+            
+            new_width = width * scaling_factor
+            new_height = height * scaling_factor
+
+            saliency_map = saliency_map.resize((new_width,new_height))
+
+            image_pil = image_pil.resize((new_width, new_height))
+
+            saliency_map.show()
+
+
+            
+
+            saliency_map.putalpha(128)  # Set alpha value to 128 (0.5 opacity)
+
+            # Blend the saliency map with the input image
+            blended_image = Image.alpha_composite(image_pil.convert('RGBA'), saliency_map)
+
+            # Convert the blended image back to RGB mode
+            blended_image = blended_image.convert('RGB')
+
+            # Convert the PIL Image to a Tkinter-compatible format
+            width, height = blended_image.size
 
             scaling_factor = 800//max(width,height)
             new_width = width * scaling_factor
@@ -81,17 +104,24 @@ class PunisherLoss(nn.Module):
             print("height from "+ str(height)+ " to " +str(new_height))
             print("width from "+ str(width)+ " to " +str(new_width))
             # Resize the image
-            saliency_map_tk = ImageTk.PhotoImage(saliency_map_pil.resize((new_width, new_height)))
+            blended_image_tk = ImageTk.PhotoImage(blended_image.resize((new_width, new_height)))
+
+
+
+            
 
             # Display the saliency map on the canvas
-            canvas.create_image(0, 0, anchor=tk.NW, image=saliency_map_tk)
+            canvas.create_image(0, 0, anchor=tk.NW, image=blended_image_tk)
+
+
 
             # Create the right buffert
             drawn_image = Image.new("RGB", (new_width, new_height), "white")
             draw = ImageDraw.Draw(drawn_image)
 
             # Prevent the saliency_map_tk from being garbage-collected prematurely
-            canvas.saliency_map_tk = saliency_map_tk
+            canvas.image = blended_image_tk
+
 
 
 
@@ -134,7 +164,6 @@ class PunisherLoss(nn.Module):
     def compute_saliency_map(self, input_data, label):
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
-        print("The label is " + str(label))
         
         # Forward pass
         outputs = self.model(input_data)  
@@ -160,28 +189,40 @@ class PunisherLoss(nn.Module):
         # Compute activations of the final convolutional layer
         activations = final_conv_layer(input_data.repeat(1, 512, 1, 1)).detach()
 
-        # Compute the importance weights
-        importance_weights = torch.mean(gradients, dim=(2, 3), keepdim=True)
+        # Compute the importance weights based on both gradients and input data
+        importance_weights = torch.mean(gradients * input_data, dim=(2, 3), keepdim=True)
 
         # Weighted activations
         weighted_activations = F.relu(torch.sum(activations * importance_weights, dim=1, keepdim=True))
 
-        # Upsample to match the size of the input_data
-        saliency_map = F.interpolate(weighted_activations, size=input_data.shape[2:], mode='bilinear', align_corners=False)
+        # Normalize the weighted activations
+        normalized_activations = weighted_activations / weighted_activations.max()
 
         # Convert to numpy array
-        saliency_map = saliency_map.squeeze().cpu().numpy()
+        saliency_map_numpy = normalized_activations.squeeze().cpu().detach().numpy()
 
-        # Normalize the saliency map
-        saliency_map /= saliency_map.max()
+        # Create Pillow RGBA image
+        saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
+
+        # Assign different shades of green based on importance values
+        green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
+        alpha_channel = (saliency_map_numpy * 255).astype(np.uint8)
+
+        # Assign green intensity and alpha channel values to RGBA image
+        saliency_map_rgba[:, :, 1] = green_intensity
+        saliency_map_rgba[:, :, 3] = alpha_channel
+
+        # Create Pillow image
+        saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
+
+        return saliency_map_pil
+
         
-        return saliency_map
-    
 
     def get_final_conv_layer(self):
         # Find the last convolutional layer in the model's architecture
         final_conv_layer = None
         for module_name, module in self.model.named_modules():
-            if isinstance(module, nn.Conv2d):
+            if isinstance(module, nn.Conv2d) or isinstance(module, nn.Conv3d):
                 final_conv_layer = module
         return final_conv_layer

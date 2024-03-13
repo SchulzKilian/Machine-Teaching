@@ -16,7 +16,7 @@ from MachinePunishment import PunisherLoss
 batch_size = 16
 learning_rate = 0.001
 num_epochs = 3
-data_size = 500
+data_size = 5
 
 
 
@@ -37,13 +37,13 @@ train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, d
 subset_train_dataset = SubsetDataset(train_dataset, data_size)
 test_dataset = datasets.MNIST(root='./data', train=False, transform=transform)
 
+
 train_loader = DataLoader(subset_train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
-
 # Train each model
-models = [ResNet50(10)]
+models = [ResNet50(10,1), ]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = PunisherLoss(2,subset_train_dataset,model)
