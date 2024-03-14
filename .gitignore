@@ -1,4 +1,4 @@
 /pets/
 /cars/
 /data/
-trained_model.pth
+./trained_model.pth

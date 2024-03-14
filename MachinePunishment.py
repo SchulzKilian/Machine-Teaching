@@ -71,7 +71,7 @@ class PunisherLoss(nn.Module):
         # Load and display each image on the canvas
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             image, label = training_dataset[idx]
-            image_np = image.squeeze().detach().numpy() * 255  # Assuming grayscale image, and un-normalizing
+            image_np = image.squeeze().detach().numpy()  # Assuming grayscale image, and un-normalizing
 
             if len(image_np.shape) == 2:  # Grayscale image
 
@@ -110,7 +110,7 @@ class PunisherLoss(nn.Module):
 
             image_pil = image_pil.resize((new_width, new_height))
 
-            saliency_map.show()
+            image_pil.show()
 
 
             
