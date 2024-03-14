@@ -15,9 +15,9 @@ from MachinePunishment import PunisherLoss
 # Define training parameters
 batch_size = 16
 learning_rate = 0.001
-num_epochs = 3
-data_size = 2
-arg = "numbers"
+num_epochs = 7
+data_size = 100
+arg = "pets"
 
 
 
@@ -63,14 +63,15 @@ elif arg == "pets":
     test_dataset = datasets.OxfordIIITPet(root='./pets', split= "test", transform=transform, download = True)
     train_dataset = datasets.OxfordIIITPet(root='./pets',transform=transform, download=True)
 
-subset_train_dataset = SubsetDataset(train_dataset, data_size)
+train_dataset = SubsetDataset(train_dataset, data_size)
+test_dataset = SubsetDataset(test_dataset,data_size)
 
 
 
 
 
 
-train_loader = DataLoader(subset_train_dataset, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
@@ -78,7 +79,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 models = [ResNet50(classes,channels), ]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(2,subset_train_dataset,model)
+    criterion = PunisherLoss(1,train_dataset,model)
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model
@@ -99,3 +100,5 @@ def test_model(model, test_loader):
 for i, model in enumerate(models):
     accuracy = test_model(model, test_loader)
     print(f'Accuracy of model {i+1}: {accuracy}%')
+
+    torch.save(model.state_dict(), 'trained_model.pth')

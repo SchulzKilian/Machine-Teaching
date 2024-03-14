@@ -8,6 +8,15 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import torch.nn.functional as F
 
+class ActivationHook:
+    def __init__(self):
+        self.activations = []
+
+    def __call__(self, module, input, output):
+        self.activations.append(output)
+
+
+
 
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
@@ -29,7 +38,8 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch is not 0:
+        if epoch%self.threshold==0 and epoch not in self.epochs:
+            #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
             return self.custom_loss_function(inputs, targets, self.training_dataset)
@@ -142,11 +152,6 @@ class PunisherLoss(nn.Module):
 
 
 
-
-
-
-
-
             def drag(event):
                 x, y = event.x, event.y
                 prev_x, prev_y = canvas.prev_x, canvas.prev_y
@@ -190,9 +195,7 @@ class PunisherLoss(nn.Module):
         target[0][label] = 1.0
         loss = self.default_loss(outputs, target)
 
-        self.model.zero_grad()
-
-        # Backpropagate to compute gradients
+        # Backpropagate to compute gradients with respect to the output
         loss.backward()
         
         # Get the gradients with respect to the input
@@ -201,46 +204,49 @@ class PunisherLoss(nn.Module):
         # Set negative gradients to zero
         gradients[gradients < 0] = 0
 
-        # Get the final convolutional layer
-        final_conv_layer = self.get_final_conv_layer()  # Adjust this according to your model
+        # Compute the importance weights based on gradients
+        importance_weights = torch.mean(gradients, dim=(1, 2, 3), keepdim=True)
 
-        # Compute activations of the final convolutional layer
-        activations = final_conv_layer(input_data.repeat(1, 512, 1, 1)).detach()
+        # Weighted input data
+        weighted_input_data = F.relu(input_data * importance_weights)
 
-        # Compute the importance weights based on both gradients and input data
-        importance_weights = torch.mean(gradients * input_data, dim=(2, 3), keepdim=True)
-
-        # Weighted activations
-        weighted_activations = F.relu(torch.sum(activations * importance_weights, dim=1, keepdim=True))
-
-        # Normalize the weighted activations
-        normalized_activations = weighted_activations / weighted_activations.max()
+        # Normalize the weighted input data
+        normalized_input = weighted_input_data / weighted_input_data.max()
 
         # Convert to numpy array
-        saliency_map_numpy = normalized_activations.squeeze().cpu().detach().numpy()
 
-        # Create Pillow RGBA image
-        saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
+        saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
+        print(str(saliency_map_numpy.shape))
+        
+        if len(saliency_map_numpy.shape) == 2:
+            saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
+            green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
+            alpha_channel = (saliency_map_numpy * 255).astype(np.uint8)
+            # Assign green intensity and alpha channel values to RGBA image
+            green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
+            saliency_map_rgba[:, :, 1] = green_intensity
+            saliency_map_rgba[:, :, 3] = alpha_channel
 
-        # Assign different shades of green based on importance values
-        green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
-        alpha_channel = (saliency_map_numpy * 255).astype(np.uint8)
+        elif len(saliency_map_numpy.shape) == 3:
+            saliency_map_rgba = np.zeros((saliency_map_numpy.shape[1], saliency_map_numpy.shape[2], 4), dtype=np.uint8)
+            green_intensity = (saliency_map_numpy[1] * 255).astype(np.uint8)
+            alpha_channel = (saliency_map_numpy.mean(axis=0) * 255).astype(np.uint8)  # Compute average intensity for alpha channel
+            # Repeat green_intensity and alpha_channel for each channel
+            saliency_map_rgba[:, :, [0, 1, 2]] = np.repeat(green_intensity[:, :, np.newaxis], 3, axis=2)
+            saliency_map_rgba[:, :, 3] = alpha_channel
 
-        # Assign green intensity and alpha channel values to RGBA image
-        saliency_map_rgba[:, :, 1] = green_intensity
-        saliency_map_rgba[:, :, 3] = alpha_channel
 
         # Create Pillow image
         saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
 
         return saliency_map_pil
 
-        
-
     def get_final_conv_layer(self):
         # Find the last convolutional layer in the model's architecture
         final_conv_layer = None
-        for module_name, module in self.model.named_modules():
+        modules = list(self.model.modules())  # Get all modules in the model
+        for module in reversed(modules):  # Iterate over modules in reverse order
             if isinstance(module, nn.Conv2d) or isinstance(module, nn.Conv3d):
                 final_conv_layer = module
+                break  # Stop iteration after finding the first convolutional layer
         return final_conv_layer
