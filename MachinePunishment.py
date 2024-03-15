@@ -12,6 +12,7 @@ class ActivationHook:
     def __init__(self):
         self.activations = []
 
+
     def __call__(self, module, input, output):
         self.activations.append(output)
 
@@ -33,6 +34,9 @@ class PunisherLoss(nn.Module):
             self.default_loss = nn.CrossEntropyLoss()
         else:
             self.default_loss = default_loss
+        
+    def item(self):
+        return self.loss.item()
 
     def setradius(self, radius):
         self.radius = radius
@@ -55,6 +59,10 @@ class PunisherLoss(nn.Module):
         print("Radius:", radius)
         self.setradius(radius)
 
+    
+    def compute_influence(self,gradients, pixel):
+        return 0
+
 
     def backward(self):
         # self.model.zero_grad()  # Clear existing gradients
@@ -71,14 +79,12 @@ class PunisherLoss(nn.Module):
                 # Adjust gradients based on the influence of marked pixels
                 for pixel in self.marked_pixels:
                     # Compute the influence of the pixel on the parameter's gradient
-                    pixel_influence = compute_influence(gradients, pixel)
+                    pixel_influence = self.compute_influence(gradients, pixel)
 
                     # Adjust the parameter's gradient based on the pixel's influence
                     gradients += pixel_influence
 
-        self.marked_pixels= set()
-        self.loss = None
-        self.model.zero_grad()
+        
 
 
     def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
