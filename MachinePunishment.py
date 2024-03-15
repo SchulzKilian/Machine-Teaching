@@ -38,7 +38,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
@@ -47,6 +47,12 @@ class PunisherLoss(nn.Module):
         else:
             print("default")
             return self.default_loss(inputs, targets)
+
+
+    def slider_changed(self, value):
+        radius = int(value)
+        print("Radius:", radius)
+        self.setradius(radius)
 
 
     def backward(self):
@@ -79,10 +85,16 @@ class PunisherLoss(nn.Module):
 
                 image_pil = Image.fromarray(image_np, 'L')
             elif len(image_np.shape) == 3: 
-
-                image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
-
-                image_pil = Image.fromarray(image_np, 'RGB') 
+                if image_np.shape[0] == 3:
+                    # Convert from CxHxW to HxWxC
+                    image_np = np.transpose(image_np, (1, 2, 0))
+                    image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
+                    image_np = np.clip(image_np, 0, 255).astype(np.uint8)
+                    image_pil = Image.fromarray(image_np, 'RGB')
+                elif image_np.shape[2] == 3:
+                    image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
+                    image_np = np.clip(image_np, 0, 255).astype(np.uint8)
+                    image_pil = Image.fromarray(image_np)
 
             elif len(image_np.shape) == 4 and image_np.shape[0] == 4:  # RGBA image
                 # Unnormalize the RGBA image
@@ -129,14 +141,14 @@ class PunisherLoss(nn.Module):
             scaling_factor = 800//max(width,height)
             new_width = width * scaling_factor
             new_height = height * scaling_factor
-            print("height from "+ str(height)+ " to " +str(new_height))
-            print("width from "+ str(width)+ " to " +str(new_width))
+
             # Resize the image
             blended_image_tk = ImageTk.PhotoImage(blended_image.resize((new_width, new_height)))
 
 
 
-            
+            slider = tk.Scale(window, from_=0, to=100, orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
+            slider.pack(side="bottom", fill="x", padx=10, pady=10)
 
             # Display the saliency map on the canvas
             canvas.create_image(0, 0, anchor=tk.NW, image=blended_image_tk)
@@ -228,16 +240,19 @@ class PunisherLoss(nn.Module):
             saliency_map_rgba[:, :, 3] = alpha_channel
 
         elif len(saliency_map_numpy.shape) == 3:
+            print("Creating rgb saliency")
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[1], saliency_map_numpy.shape[2], 4), dtype=np.uint8)
+            print(saliency_map_rgba.shape)
             green_intensity = (saliency_map_numpy[1] * 255).astype(np.uint8)
-            alpha_channel = (saliency_map_numpy.mean(axis=0) * 255).astype(np.uint8)  # Compute average intensity for alpha channel
+            alpha_channel = np.full_like(green_intensity, 255) 
             # Repeat green_intensity and alpha_channel for each channel
-            saliency_map_rgba[:, :, [0, 1, 2]] = np.repeat(green_intensity[:, :, np.newaxis], 3, axis=2)
+            saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
 
 
         # Create Pillow image
         saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
+        saliency_map_pil.show()
 
         return saliency_map_pil
 
