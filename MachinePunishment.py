@@ -65,24 +65,21 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        # self.model.zero_grad()  # Clear existing gradients
 
-        # Backpropagate to compute gradients
-        # self.loss.backward()
+        target_layer_names = ['conv1', 'conv2', 'fc1']
 
-        # Iterate over model parameters
-        for param in self.model.parameters():
-            if param.grad is not None:
-                # Get the gradients for the current parameter
-                gradients = param.grad
+        for name, module in self.model.named_children():
+            if any(layer_name in name for layer_name in target_layer_names):
+                for param in module.parameters():
+                    if param.grad is not None:
+                        gradients = param.grad
 
-                # Adjust gradients based on the influence of marked pixels
-                for pixel in self.marked_pixels:
-                    # Compute the influence of the pixel on the parameter's gradient
-                    pixel_influence = self.compute_influence(gradients, pixel)
+                        for pixel in self.marked_pixels:
+                            pixel_influence = self.compute_influence(gradients, pixel)
+                            gradients += pixel_influence
 
-                    # Adjust the parameter's gradient based on the pixel's influence
-                    gradients += pixel_influence
+
+        
 
         
 
@@ -134,7 +131,7 @@ class PunisherLoss(nn.Module):
 
             image_pil = Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
-            image_pil.show()
+
 
             saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
 
@@ -174,6 +171,7 @@ class PunisherLoss(nn.Module):
             slider = tk.Scale(window, from_=0, to=20, length = 200,orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
             # slider.pack_propagate(0)
             slider.pack(side="bottom",anchor="w", fill="y", padx=10, pady=10)
+            slider.set(self.radius)
 
             # Display the saliency map on the canvas
             canvas.create_image(0, 0, anchor=tk.NW, image=blended_image_tk)
@@ -284,7 +282,7 @@ class PunisherLoss(nn.Module):
 
         # Create Pillow image
         saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
-        saliency_map_pil.show()
+
 
         return saliency_map_pil
 

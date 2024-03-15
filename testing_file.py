@@ -5,7 +5,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset
 #from GuidedCNN import GuidedCNN
-from StandardCNN import ResNet50
+from StandardCNN import ResNet50, SimpleCNN
 from MachinePunishment import PunisherLoss
 
 
@@ -76,7 +76,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
 # Train each model
-models = [ResNet50(classes,channels), ]
+models = [SimpleCNN(), ]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = PunisherLoss(1,train_dataset,model)
