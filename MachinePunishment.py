@@ -244,7 +244,10 @@ class PunisherLoss(nn.Module):
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[1], saliency_map_numpy.shape[2], 4), dtype=np.uint8)
             print(saliency_map_rgba.shape)
             green_intensity = (saliency_map_numpy[1] * 255).astype(np.uint8)
-            alpha_channel = np.full_like(green_intensity, 255) 
+            alpha_channel = np.full_like(green_intensity, 255)
+
+            # Set alpha channel to 0 where green intensity is zero
+            alpha_channel[green_intensity == 0] = 0
             # Repeat green_intensity and alpha_channel for each channel
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
