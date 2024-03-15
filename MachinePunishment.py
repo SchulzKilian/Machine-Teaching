@@ -24,6 +24,7 @@ class PunisherLoss(nn.Module):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
         self.epochs = []
+        self.loss = None
         self.model = model
         self.marked_pixels = set()
         self.radius = 15
@@ -56,7 +57,28 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        return None
+        # self.model.zero_grad()  # Clear existing gradients
+
+        # Backpropagate to compute gradients
+        # self.loss.backward()
+
+        # Iterate over model parameters
+        for param in self.model.parameters():
+            if param.grad is not None:
+                # Get the gradients for the current parameter
+                gradients = param.grad
+
+                # Adjust gradients based on the influence of marked pixels
+                for pixel in self.marked_pixels:
+                    # Compute the influence of the pixel on the parameter's gradient
+                    pixel_influence = compute_influence(gradients, pixel)
+
+                    # Adjust the parameter's gradient based on the pixel's influence
+                    gradients += pixel_influence
+
+        self.marked_pixels= set()
+        self.loss = None
+        self.model.zero_grad()
 
 
     def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
@@ -159,7 +181,6 @@ class PunisherLoss(nn.Module):
             # Prevent the saliency_map_tk from being garbage-collected prematurely
             canvas.image = blended_image_tk
             def reset(self):
-                print("Hello")
                 canvas.prev_x, canvas.prev_y = None, None
 
 
@@ -174,7 +195,7 @@ class PunisherLoss(nn.Module):
 
             canvas.bind("<B1-Motion>", lambda event: drag(event))
             canvas.bind("<ButtonRelease-1>", reset)
-              # Initialize previous coordinates
+
 
 
 
@@ -207,10 +228,10 @@ class PunisherLoss(nn.Module):
 
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
-        loss = self.default_loss(outputs, target)
+        self.loss = self.default_loss(outputs, target)
 
         # Backpropagate to compute gradients with respect to the output
-        loss.backward()
+        self.loss.backward()
         
         # Get the gradients with respect to the input
         gradients = input_data.grad.clone().detach()
