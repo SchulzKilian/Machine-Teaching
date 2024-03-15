@@ -127,7 +127,7 @@ class PunisherLoss(nn.Module):
 
             
 
-            saliency_map.putalpha(128)  # Set alpha value to 128 (0.5 opacity)
+            # saliency_map.putalpha(128)  # Set alpha value to 128 (0.5 opacity)
 
             # Blend the saliency map with the input image
             blended_image = Image.alpha_composite(image_pil.convert('RGBA'), saliency_map)
@@ -147,7 +147,7 @@ class PunisherLoss(nn.Module):
 
 
 
-            slider = tk.Scale(window, from_=0, to=100, orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
+            slider = tk.Scale(window, from_=0, to=20, orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
             slider.pack(side="bottom", fill="x", padx=10, pady=10)
 
             # Display the saliency map on the canvas
@@ -174,7 +174,9 @@ class PunisherLoss(nn.Module):
                 canvas.prev_x, canvas.prev_y = x, y
 
             canvas.bind("<B1-Motion>", lambda event: drag(event))
+            canvas.bind("<ButtonRelease-1>", canvas.prev_x, canvas.prev_y = None, None)
             canvas.prev_x, canvas.prev_y = None, None  # Initialize previous coordinates
+
 
         def close_window():
             for x in range(drawn_image.width):
@@ -233,18 +235,18 @@ class PunisherLoss(nn.Module):
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
             green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
-            alpha_channel = (saliency_map_numpy * 255).astype(np.uint8)
+            alpha_channel = np.full_like(green_intensity, 128)
+            # Set alpha channel to 0 where green intensity is zero
+            alpha_channel[green_intensity == 0] = 0
             # Assign green intensity and alpha channel values to RGBA image
             green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
 
         elif len(saliency_map_numpy.shape) == 3:
-            print("Creating rgb saliency")
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[1], saliency_map_numpy.shape[2], 4), dtype=np.uint8)
-            print(saliency_map_rgba.shape)
             green_intensity = (saliency_map_numpy[1] * 255).astype(np.uint8)
-            alpha_channel = np.full_like(green_intensity, 255)
+            alpha_channel = np.full_like(green_intensity, 128)
 
             # Set alpha channel to 0 where green intensity is zero
             alpha_channel[green_intensity == 0] = 0
