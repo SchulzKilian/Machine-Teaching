@@ -106,6 +106,7 @@ class PunisherLoss(nn.Module):
 
             image_pil = Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
+            image_pil.show()
 
             saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
 
@@ -121,11 +122,6 @@ class PunisherLoss(nn.Module):
             saliency_map = saliency_map.resize((new_width,new_height))
 
             image_pil = image_pil.resize((new_width, new_height))
-
-            image_pil.show()
-
-
-            
 
             # saliency_map.putalpha(128)  # Set alpha value to 128 (0.5 opacity)
 
@@ -147,8 +143,9 @@ class PunisherLoss(nn.Module):
 
 
 
-            slider = tk.Scale(window, from_=0, to=20, orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
-            slider.pack(side="bottom", fill="x", padx=10, pady=10)
+            slider = tk.Scale(window, from_=0, to=20, length = 200,orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
+            # slider.pack_propagate(0)
+            slider.pack(side="bottom",anchor="w", fill="y", padx=10, pady=10)
 
             # Display the saliency map on the canvas
             canvas.create_image(0, 0, anchor=tk.NW, image=blended_image_tk)
@@ -161,12 +158,14 @@ class PunisherLoss(nn.Module):
 
             # Prevent the saliency_map_tk from being garbage-collected prematurely
             canvas.image = blended_image_tk
-
+            def reset(self):
+                print("Hello")
+                canvas.prev_x, canvas.prev_y = None, None
 
 
             def drag(event):
                 x, y = event.x, event.y
-                prev_x, prev_y = canvas.prev_x, canvas.prev_y
+                prev_x, prev_y = getattr(canvas, 'prev_x', None), getattr(canvas, 'prev_y', None)
                 if prev_x is not None and prev_y is not None:
                     draw.line([prev_x, prev_y, x, y], fill=self.red_color, width=self.radius*2, joint="curve" )  # Draw line on the image buffer
                     canvas.create_line(prev_x, prev_y, x, y, fill=self.red_color, width=self.radius*2, smooth=True, splinesteps=10, capstyle='round', joinstyle='round')
@@ -174,8 +173,9 @@ class PunisherLoss(nn.Module):
                 canvas.prev_x, canvas.prev_y = x, y
 
             canvas.bind("<B1-Motion>", lambda event: drag(event))
-            canvas.bind("<ButtonRelease-1>", canvas.prev_x, canvas.prev_y = None, None)
-            canvas.prev_x, canvas.prev_y = None, None  # Initialize previous coordinates
+            canvas.bind("<ButtonRelease-1>", reset)
+              # Initialize previous coordinates
+
 
 
         def close_window():
