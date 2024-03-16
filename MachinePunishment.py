@@ -50,10 +50,23 @@ class PunisherLoss(nn.Module):
                 self.last_third_layers.append(module)
         
 
-    
-        
     def item(self):
         return self.loss.item()
+
+    def input_gradient_backpropagation(self, output_gradients, input_data):
+        # Ensure input_data requires gradients
+        input_data.requires_grad_(True)
+        # Perform forward pass to compute intermediate outputs
+        intermediate_outputs = []
+        output = input_data
+        for layer in self.model.children():
+            output = layer(output)
+            intermediate_outputs.append(output)
+
+        gradients_wrt_input = torch.autograd.grad(outputs=intermediate_outputs, inputs=input_data,
+                                                grad_outputs=output_gradients, retain_graph=True)
+
+        self.grad_wrt_input = gradients_wrt_input
 
     def setradius(self, radius):
         self.radius = radius
@@ -76,27 +89,27 @@ class PunisherLoss(nn.Module):
         self.setradius(radius)
 
     
-    def compute_influence(self,gradients, pixel):
-        return 0
+    def compute_influence(self, gradients, pixel):
+        # For simplicity, let's assume we just return the gradient of the loss w.r.t the pixel
+
+        loss = torch.sum(gradients * pixel)
+        loss.backward()
+        return -pixel.grad
 
 
     def backward(self):
-
-        for module in self.last_third_layers:
-
-            for param in module.parameters():
-                if param.grad is not None:
-                    gradients = param.grad
-
-                    for pixel in self.marked_pixels:
-                        pixel_influence = self.compute_influence(gradients, pixel)
-                        gradients += pixel_influence
-
-
+        # List to store intermediate outputs
+        intermediate_outputs = []
         
-
+        # Forward pass through each layer
+        output = self.marked_pixels.clone()
+        for layer in self.model.children():
+            # Compute the output of the current layer
+            output = layer.forward(output)
+            # Store the intermediate output for potential use in backpropagation
+            intermediate_outputs.append(output)
         
-
+        return output, intermediate_outputs
 
     def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
         root = tk.Tk()
@@ -217,13 +230,20 @@ class PunisherLoss(nn.Module):
 
 
 
-        def close_window():
-            for x in range(drawn_image.width):
-                for y in range(drawn_image.height):
-                    if drawn_image.getpixel((x, y)) == (255, 0, 1) and saliency_map.getpixel((x,y))[3]>0:  # Check if the pixel is not white
-                        self.marked_pixels.add((x, y))
-            print(len(self.marked_pixels))
-            root.destroy()
+            def close_window():
+                image_width, image_height = drawn_image.size
+                self.marked_pixels = torch.zeros((image_height, image_width, 3), dtype=torch.float)
+
+                for y in range(image_height):
+                    for x in range(image_width):
+                        if drawn_image.getpixel((x, y)) == (255, 0, 1) and saliency_map.getpixel((x,y))[3] > 0:
+                            self.marked_pixels[y, x,0],self.marked_pixels[y, x,1],self.marked_pixels[y, x,2] = -1.0, -1.0, -1.0  # Set the marked pixel to -1 in the tensor
+
+                print("Number of marked pixels:", torch.sum(self.marked_pixels).item())
+                root.destroy()
+
+
+
 
         close_button = tk.Button(window, text="Continue", command=close_window)
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
@@ -249,10 +269,13 @@ class PunisherLoss(nn.Module):
         self.loss = self.default_loss(outputs, target)
 
         # Backpropagate to compute gradients with respect to the output
-        self.loss.backward()
+        self.loss.backward(retain_graph=True)
         
         # Get the gradients with respect to the input
         gradients = input_data.grad.clone().detach()
+
+        # compute the gradients wrt input before i set the egatives to zero
+        self.input_gradient_backpropagation(gradients, input_data)
 
         # Set negative gradients to zero
         gradients[gradients < 0] = 0
