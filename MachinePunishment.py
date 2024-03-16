@@ -34,6 +34,7 @@ class PunisherLoss(nn.Module):
             self.default_loss = nn.CrossEntropyLoss()
         else:
             self.default_loss = default_loss
+<<<<<<< HEAD
         self.save_last_third_layers()
 
     def save_last_third_layers(self):
@@ -50,6 +51,9 @@ class PunisherLoss(nn.Module):
                 self.last_third_layers.append(module)
         
 
+=======
+        
+>>>>>>> parent of 1134731 (Only memorizing relevant pixels)
     def item(self):
         return self.loss.item()
 
@@ -86,6 +90,7 @@ class PunisherLoss(nn.Module):
 
     def slider_changed(self, value):
         radius = int(value)
+        print("Radius:", radius)
         self.setradius(radius)
 
     
@@ -98,8 +103,25 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
+<<<<<<< HEAD
         # List to store intermediate outputs
         intermediate_outputs = []
+=======
+
+        target_layer_names = ['conv1', 'conv2', 'fc1']
+
+        for name, module in self.model.named_children():
+            if any(layer_name in name for layer_name in target_layer_names):
+                for param in module.parameters():
+                    if param.grad is not None:
+                        gradients = param.grad
+
+                        for pixel in self.marked_pixels:
+                            pixel_influence = self.compute_influence(gradients, pixel)
+                            gradients += pixel_influence
+
+
+>>>>>>> parent of 1134731 (Only memorizing relevant pixels)
         
         # Forward pass through each layer
         output = self.marked_pixels.clone()
@@ -195,7 +217,7 @@ class PunisherLoss(nn.Module):
 
 
 
-            slider = tk.Scale(window, from_=0, to=50, length = 200,orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
+            slider = tk.Scale(window, from_=0, to=20, length = 200,orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
             # slider.pack_propagate(0)
             slider.pack(side="bottom",anchor="w", fill="y", padx=10, pady=10)
             slider.set(self.radius)
@@ -292,7 +314,7 @@ class PunisherLoss(nn.Module):
         # Convert to numpy array
 
         saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
-
+        print(str(saliency_map_numpy.shape))
         
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
