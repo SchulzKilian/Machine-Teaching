@@ -27,14 +27,12 @@ class PunisherLoss(nn.Module):
         self.epochs = []
         self.loss = None
         self.model = model
-        self.marked_pixels = set()
         self.radius = 15
         self.training_dataset = training_dataset
         if not default_loss:
             self.default_loss = nn.CrossEntropyLoss()
         else:
             self.default_loss = default_loss
-<<<<<<< HEAD
         self.save_last_third_layers()
 
     def save_last_third_layers(self):
@@ -51,9 +49,6 @@ class PunisherLoss(nn.Module):
                 self.last_third_layers.append(module)
         
 
-=======
-        
->>>>>>> parent of 1134731 (Only memorizing relevant pixels)
     def item(self):
         return self.loss.item()
 
@@ -64,13 +59,14 @@ class PunisherLoss(nn.Module):
         intermediate_outputs = []
         output = input_data
         for layer in self.model.children():
+            continue
             output = layer(output)
             intermediate_outputs.append(output)
 
-        gradients_wrt_input = torch.autograd.grad(outputs=intermediate_outputs, inputs=input_data,
-                                                grad_outputs=output_gradients, retain_graph=True)
+        # gradients_wrt_input = torch.autograd.grad(outputs=intermediate_outputs, inputs=input_data,
+        #                                         grad_outputs=output_gradients, retain_graph=True)
 
-        self.grad_wrt_input = gradients_wrt_input
+        # self.grad_wrt_input = gradients_wrt_input
 
     def setradius(self, radius):
         self.radius = radius
@@ -90,7 +86,6 @@ class PunisherLoss(nn.Module):
 
     def slider_changed(self, value):
         radius = int(value)
-        print("Radius:", radius)
         self.setradius(radius)
 
     
@@ -102,36 +97,22 @@ class PunisherLoss(nn.Module):
         return -pixel.grad
 
 
-    def backward(self):
-<<<<<<< HEAD
-        # List to store intermediate outputs
-        intermediate_outputs = []
-=======
+    def backward(self):    
+        for layer in reversed(self.last_third_layers):
+            # Backpropagate through the layer to obtain gradients with respect to the input
+            for parameter in layer.parameters():
+                if parameter.grad is not None:
+                    
+                    grad_input = parameter.grad_input.clone()
+                    grad_input = grad_input.squeeze(0).squeeze(0)
+                    marked_pixels = self.marked_pixels.squeeze(0).squeeze(0)
+                    with torch.no_grad():
+                        update = torch.sum(grad_input * marked_pixels).item()
+                        update_tensor = torch.full(parameter.grad.shape, update)
+                        parameter.grad = update_tensor
+                        
 
-        target_layer_names = ['conv1', 'conv2', 'fc1']
-
-        for name, module in self.model.named_children():
-            if any(layer_name in name for layer_name in target_layer_names):
-                for param in module.parameters():
-                    if param.grad is not None:
-                        gradients = param.grad
-
-                        for pixel in self.marked_pixels:
-                            pixel_influence = self.compute_influence(gradients, pixel)
-                            gradients += pixel_influence
-
-
->>>>>>> parent of 1134731 (Only memorizing relevant pixels)
-        
-        # Forward pass through each layer
-        output = self.marked_pixels.clone()
-        for layer in self.model.children():
-            # Compute the output of the current layer
-            output = layer.forward(output)
-            # Store the intermediate output for potential use in backpropagation
-            intermediate_outputs.append(output)
-        
-        return output, intermediate_outputs
+            
 
     def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
         root = tk.Tk()
@@ -189,7 +170,7 @@ class PunisherLoss(nn.Module):
 
             scaling_factor = 800//max(width,height)
 
-            
+            print("scaling factor is  "+str(scaling_factor))
             new_width = width * scaling_factor
             new_height = height * scaling_factor
 
@@ -205,19 +186,13 @@ class PunisherLoss(nn.Module):
             # Convert the blended image back to RGB mode
             blended_image = blended_image.convert('RGB')
 
-            # Convert the PIL Image to a Tkinter-compatible format
-            width, height = blended_image.size
-
-            scaling_factor = 800//max(width,height)
-            new_width = width * scaling_factor
-            new_height = height * scaling_factor
 
             # Resize the image
             blended_image_tk = ImageTk.PhotoImage(blended_image.resize((new_width, new_height)))
 
 
 
-            slider = tk.Scale(window, from_=0, to=20, length = 200,orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
+            slider = tk.Scale(window, from_=0, to=80, length = 200,orient="horizontal", command=lambda value, canvas=canvas: self.slider_changed(value))
             # slider.pack_propagate(0)
             slider.pack(side="bottom",anchor="w", fill="y", padx=10, pady=10)
             slider.set(self.radius)
@@ -254,13 +229,20 @@ class PunisherLoss(nn.Module):
 
             def close_window():
                 image_width, image_height = drawn_image.size
-                self.marked_pixels = torch.zeros((image_height, image_width, 3), dtype=torch.float)
-
-                for y in range(image_height):
-                    for x in range(image_width):
-                        if drawn_image.getpixel((x, y)) == (255, 0, 1) and saliency_map.getpixel((x,y))[3] > 0:
-                            self.marked_pixels[y, x,0],self.marked_pixels[y, x,1],self.marked_pixels[y, x,2] = -1.0, -1.0, -1.0  # Set the marked pixel to -1 in the tensor
-
+                scaled_width = image_width // scaling_factor
+                scaled_height = image_height // scaling_factor
+                self.marked_pixels = torch.zeros((1, 1, scaled_height, scaled_width), dtype=torch.float)
+                
+                for y in range(scaled_height):
+                    for x in range(scaled_width):
+                        # Get the corresponding coordinates in the original image
+                        original_x = x * scaling_factor
+                        original_y = y * scaling_factor
+                        
+                        # Check if the pixel is marked in the scaled image and has non-zero saliency
+                        if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
+                            # Mark the corresponding pixel in the scaled marking tensor
+                            self.marked_pixels[0, 0, y, x] = -1.0
                 print("Number of marked pixels:", torch.sum(self.marked_pixels).item())
                 root.destroy()
 
@@ -280,6 +262,7 @@ class PunisherLoss(nn.Module):
 
 
     def compute_saliency_map(self, input_data, label):
+
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
         
@@ -296,8 +279,14 @@ class PunisherLoss(nn.Module):
         # Get the gradients with respect to the input
         gradients = input_data.grad.clone().detach()
 
+        for layer in self.model.modules():
+            for parameter in layer.parameters():
+                parameter.grad_input = gradients.clone()
+
+
+
         # compute the gradients wrt input before i set the egatives to zero
-        self.input_gradient_backpropagation(gradients, input_data)
+        # self.input_gradient_backpropagation(gradients, input_data)
 
         # Set negative gradients to zero
         gradients[gradients < 0] = 0
@@ -314,7 +303,7 @@ class PunisherLoss(nn.Module):
         # Convert to numpy array
 
         saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
-        print(str(saliency_map_numpy.shape))
+
         
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
