@@ -98,10 +98,16 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):    
-        for layer in reversed(self.last_third_layers):
+        for layer in reversed(list(self.model.children())):
+            update = True
+            if layer in self.last_third_layers:
+                update = False
             # Backpropagate through the layer to obtain gradients with respect to the input
             for parameter in layer.parameters():
                 if parameter.grad is not None:
+                    if update:
+                        parameter.grad.zero_()
+                        continue
                     
                     grad_input = parameter.grad_input.clone()
                     grad_input = grad_input.squeeze(0).squeeze(0)

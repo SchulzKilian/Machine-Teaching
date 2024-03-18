@@ -17,7 +17,7 @@ batch_size = 16
 learning_rate = 0.001
 num_epochs = 7
 data_size = 5
-arg = "numbers"
+arg = "pets"
 
 
 
@@ -76,7 +76,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
 # Train each model
-models = [SimpleCNN(), ]
+models = [ResNet50(classes,channels), ]
 for model in models:
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = PunisherLoss(1,train_dataset,model)
