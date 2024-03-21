@@ -78,8 +78,8 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 # Train each model
 models = [ResNet50(classes,channels), ]
 for model in models:
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(1,train_dataset,model)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+    criterion = PunisherLoss(1,train_dataset,model, nuke = False)
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model

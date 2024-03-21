@@ -27,6 +27,7 @@ class ResNet50(nn.Module):
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels,epoch)
+                print(loss)
                 loss.backward()
                 optimizer.step()
                 running_loss += loss.item()

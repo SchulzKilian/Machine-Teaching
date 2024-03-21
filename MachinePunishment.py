@@ -7,6 +7,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import torch.nn.functional as F
+import enum
+
+class Mode(enum.Enum):
+    NUKE = 'nuke'
+    ADJUST = 'adjust'
+    LOSS = 'loss'
+
+
 
 class ActivationHook:
     def __init__(self):
@@ -21,11 +29,12 @@ class ActivationHook:
 
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
-    def __init__(self, threshold: int, training_dataset, model, default_loss = None):
+    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.ADJUST):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
         self.epochs = []
         self.loss = None
+        self.mode = mode
         self.model = model
         self.radius = 15
         self.training_dataset = training_dataset
@@ -97,7 +106,8 @@ class PunisherLoss(nn.Module):
         return -pixel.grad
 
 
-    def backward(self):    
+    def backward(self):   
+ 
         for layer in reversed(list(self.model.children())):
             update = True
             if layer in self.last_third_layers:
@@ -113,9 +123,21 @@ class PunisherLoss(nn.Module):
                     grad_input = grad_input.squeeze(0).squeeze(0)
                     marked_pixels = self.marked_pixels.squeeze(0).squeeze(0)
                     with torch.no_grad():
-                        update = torch.sum(grad_input * marked_pixels).item()
-                        update_tensor = torch.full(parameter.grad.shape, update)
-                        parameter.grad = update_tensor
+                        update = torch.sum(grad_input * marked_pixels).item()/0.001
+                        if self.mode == Mode.ADJUST:
+                            update_tensor = torch.full(parameter.grad.shape, update)
+                            parameter.grad = update_tensor
+                        elif self.mode == Mode.NUKE:
+                            if update < 0:
+                                update_tensor = torch.full(parameter.grad.shape,0.0)
+                                parameter.data = update_tensor
+                                parameter.grad.zero_()
+
+
+                            
+
+
+            
                         
 
             
@@ -248,7 +270,7 @@ class PunisherLoss(nn.Module):
                         # Check if the pixel is marked in the scaled image and has non-zero saliency
                         if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
                             # Mark the corresponding pixel in the scaled marking tensor
-                            self.marked_pixels[0, 0, y, x] = -1.0
+                            self.marked_pixels[0, 0, y, x] = -255.0
                 print("Number of marked pixels:", torch.sum(self.marked_pixels).item())
                 root.destroy()
 
