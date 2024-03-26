@@ -6,7 +6,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset
 #from GuidedCNN import GuidedCNN
 from StandardCNN import ResNet50, SimpleCNN
-from MachinePunishment import PunisherLoss
+from MachinePunishmentLoss import PunisherLoss
 
 
 
@@ -16,7 +16,7 @@ from MachinePunishment import PunisherLoss
 batch_size = 16
 learning_rate = 0.001
 num_epochs = 7
-data_size = 5
+data_size = 32
 arg = "pets"
 
 
@@ -25,12 +25,16 @@ class SubsetDataset(Dataset):
     def __init__(self, dataset, num_samples):
         self.dataset = dataset
         self.num_samples = num_samples
+        self.image_ids = list(range(num_samples))
 
     def __len__(self):
         return self.num_samples
 
     def __getitem__(self, idx):
-        return self.dataset[idx]
+        image, _ = self.dataset[idx]  
+        image_id = self.image_ids[idx]  
+        return image, image_id
+
 
 # Load data
 
@@ -79,7 +83,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 models = [ResNet50(classes,channels), ]
 for model in models:
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(1,train_dataset,model, nuke = False)
+    criterion = PunisherLoss(train_dataset,model)
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model

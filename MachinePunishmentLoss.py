@@ -9,11 +9,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import torch.nn.functional as F
 import enum
 
-class Mode(enum.Enum):
-    NUKE = 'nuke'
-    ADJUST = 'adjust'
-    LOSS = 'loss'
-
 
 
 
@@ -31,34 +26,21 @@ class ActivationHook:
 
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
-    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.ADJUST):
+    def __init__(self, training_dataset, model, default_loss = None):
         super(PunisherLoss, self).__init__()
-        self.threshold = threshold
-        self.epochs = []
+
         self.loss = None
-        self.mode = mode
+        self.marked = set()
         self.model = model
         self.radius = 15
         self.training_dataset = training_dataset
         if not default_loss:
-            self.default_loss = nn.CrossEntropyLoss()
+            self.default_loss = nn.CrossEntropyLoss(reduction= "none")
         else:
             self.default_loss = default_loss
-        self.save_last_third_layers()
 
-    def save_last_third_layers(self):
-        self.last_third_layers = []
-        
 
-        total_layers = len(list(self.model.children()))
-        
-        start_index = total_layers // 3 * 2
-        
-        # Iterate through the model's children
-        for idx, (name, module) in enumerate(self.model.named_children()):
-            if idx >= start_index:
-                self.last_third_layers.append(module)
-        
+
 
     def item(self):
         return self.loss.item()
@@ -74,25 +56,15 @@ class PunisherLoss(nn.Module):
             output = layer(output)
             intermediate_outputs.append(output)
 
-        # gradients_wrt_input = torch.autograd.grad(outputs=intermediate_outputs, inputs=input_data,
-        #                                         grad_outputs=output_gradients, retain_graph=True)
-
-        # self.grad_wrt_input = gradients_wrt_input
 
     def setradius(self, radius):
         self.radius = radius
 
     def forward(self, inputs, targets, epoch):
-        print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
-            #return self.default_loss(inputs, targets)
-            print("custom")
-            self.epochs.append(epoch)
-            return self.custom_loss_function(inputs, targets, self.training_dataset)
-        
-        else:
-            print("default")
-            return self.default_loss(inputs, targets)
+        loss = self.default_loss(inputs, targets)
+        max_loss_index = torch.argmax(loss)
+        print("The shape of loss is "+str(loss.shape))
+        print("The max_loss_index is "+ str(max_loss_index))
 
 
     def slider_changed(self, value):
@@ -101,39 +73,14 @@ class PunisherLoss(nn.Module):
 
     
     def compute_influence(self, gradients, pixel):
-        # For simplicity, let's assume we just return the gradient of the loss w.r.t the pixel
-
         loss = torch.sum(gradients * pixel)
         loss.backward()
         return -pixel.grad
 
 
     def backward(self):   
- 
-        for layer in reversed(list(self.model.children())):
-            update = True
-            if layer in self.last_third_layers:
-                update = False
-            # Backpropagate through the layer to obtain gradients with respect to the input
-            for parameter in layer.parameters():
-                if parameter.grad is not None:
-                    if update:
-                        parameter.grad.zero_()
-                        continue
-                    
-                    grad_input = parameter.grad_input.clone()
-                    grad_input = grad_input.squeeze(0).squeeze(0)
-                    marked_pixels = self.marked_pixels.squeeze(0).squeeze(0)
-                    with torch.no_grad():
-                        update = torch.sum(grad_input * marked_pixels).item()/0.001
-                        if self.mode == Mode.ADJUST:
-                            update_tensor = torch.full(parameter.grad.shape, update)
-                            parameter.grad = update_tensor
-                        elif self.mode == Mode.NUKE:
-                            if update < 0:
-                                update_tensor = torch.full(parameter.grad.shape,0.0)
-                                parameter.data = update_tensor
-                                parameter.grad.zero_()
+        pass
+
 
 
                             
@@ -149,8 +96,6 @@ class PunisherLoss(nn.Module):
         root.title("Mark Pixels")
 
         
-
-        # Create a new window to display the images for marking
         window = tk.Toplevel(root)
         window.title("Mark Pixels")
         window.geometry("800x800")  # Set the window size
@@ -200,7 +145,7 @@ class PunisherLoss(nn.Module):
 
             scaling_factor = 800//max(width,height)
 
-            print("scaling factor is  "+str(scaling_factor))
+
             new_width = width * scaling_factor
             new_height = height * scaling_factor
 
