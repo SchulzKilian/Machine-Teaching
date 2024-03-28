@@ -29,7 +29,7 @@ class ActivationHook:
 
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
-    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.ADJUST):
+    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.NUKE):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
         self.epochs = []
@@ -108,9 +108,11 @@ class PunisherLoss(nn.Module):
 
     def backward(self):   
  
-        for layer in reversed(list(self.model.children())):
+        for name,layer in reversed(list(self.model.named_children())):
+            print("Name of layer is "+name)
+            print("The amount of parameters within this layer is "+ str(len(list(layer.parameters()))))
             update = True
-            if layer in self.last_third_layers:
+            if layer in self.last_third_layers or True:
                 update = False
             # Backpropagate through the layer to obtain gradients with respect to the input
             for parameter in layer.parameters():
@@ -123,15 +125,18 @@ class PunisherLoss(nn.Module):
                     grad_input = grad_input.squeeze(0).squeeze(0)
                     marked_pixels = self.marked_pixels.squeeze(0).squeeze(0)
                     with torch.no_grad():
-                        update = torch.sum(grad_input * marked_pixels).item()/0.001
+                        update = torch.sum(grad_input * marked_pixels).item()# /0.001
+                        # print(update)
                         if self.mode == Mode.ADJUST:
                             update_tensor = torch.full(parameter.grad.shape, update)
                             parameter.grad = update_tensor
                         elif self.mode == Mode.NUKE:
                             if update < 0:
-                                update_tensor = torch.full(parameter.grad.shape,0.0)
-                                parameter.data = update_tensor
+                                update_tensor = torch.full(parameter.grad.shape,update)
+                                parameter.data = parameter.data + update_tensor
                                 parameter.grad.zero_()
+
+
 
 
                             
@@ -198,7 +203,6 @@ class PunisherLoss(nn.Module):
 
             scaling_factor = 800//max(width,height)
 
-            print("scaling factor is  "+str(scaling_factor))
             new_width = width * scaling_factor
             new_height = height * scaling_factor
 

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+import torch.nn.functional as F
+
 
 class ResNet50(nn.Module):
     def __init__(self, num_classes, input_channels=3):
@@ -27,7 +29,6 @@ class ResNet50(nn.Module):
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels,epoch)
-                print(loss)
                 loss.backward()
                 optimizer.step()
                 running_loss += loss.item()
@@ -37,21 +38,24 @@ class ResNet50(nn.Module):
 
 
 class SimpleCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, classes, num_input_channels=3):
         super(SimpleCNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1)
+        self.num_input_channels = num_input_channels
+        self.num_classes = classes
+        self.conv1 = nn.Conv2d(num_input_channels, 16, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc1 = nn.Linear(32 * 7 * 7, 128)
-        self.fc2 = nn.Linear(128, 10)  # Assuming 10 output classes
+        self.fc1 = nn.Linear(32 * 56 * 56, 128)  # Adjusted input size
+        self.fc2 = nn.Linear(128, classes)
 
     def forward(self, x):
-        x = self.pool(nn.functional.relu(self.conv1(x)))
-        x = self.pool(nn.functional.relu(self.conv2(x)))
-        x = x.view(-1, 32 * 7 * 7)  # Reshape for fully connected layer
-        x = nn.functional.relu(self.fc1(x))
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = x.view(-1, 32 * 56 * 56)  # Properly flatten the output
+        x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
+
 
     def train_model(model, train_loader, criterion, optimizer, num_epochs):
         model.train()
