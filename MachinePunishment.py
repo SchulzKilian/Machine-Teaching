@@ -123,7 +123,8 @@ class PunisherLoss(nn.Module):
                     
                     grad_input = parameter.grad_input.clone()
                     grad_input = grad_input.squeeze(0).squeeze(0)
-                    marked_pixels = self.marked_pixels.squeeze(0).squeeze(0)
+                    marked_pixels = self.marked_pixels
+                    print("shapes are "+ str(marked_pixels.shape)+ " and "+str(grad_input.shape))
                     with torch.no_grad():
                         update = torch.sum(grad_input * marked_pixels).item()# /0.001
                         # print(update)
@@ -131,10 +132,12 @@ class PunisherLoss(nn.Module):
                             update_tensor = torch.full(parameter.grad.shape, update)
                             parameter.grad = update_tensor
                         elif self.mode == Mode.NUKE:
+                            print("Update"+str(update))
                             if update < 0:
                                 update_tensor = torch.full(parameter.grad.shape,update)
                                 parameter.data = parameter.data + update_tensor
                                 parameter.grad.zero_()
+                                print("The shape of the parameter is " +str(parameter.data.shape))
 
 
 
@@ -263,7 +266,7 @@ class PunisherLoss(nn.Module):
                 image_width, image_height = drawn_image.size
                 scaled_width = image_width // scaling_factor
                 scaled_height = image_height // scaling_factor
-                self.marked_pixels = torch.zeros((1, 1, scaled_height, scaled_width), dtype=torch.float)
+                self.marked_pixels = torch.zeros((3, scaled_height, scaled_width), dtype=torch.float)
                 
                 for y in range(scaled_height):
                     for x in range(scaled_width):
@@ -274,7 +277,7 @@ class PunisherLoss(nn.Module):
                         # Check if the pixel is marked in the scaled image and has non-zero saliency
                         if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
                             # Mark the corresponding pixel in the scaled marking tensor
-                            self.marked_pixels[0, 0, y, x] = -255.0
+                            self.marked_pixels[0, y, x],self.marked_pixels[1,y, x],self.marked_pixels[2,y, x] = -252.0,-255.0,-255.0
                 print("Number of marked pixels:", torch.sum(self.marked_pixels).item())
                 root.destroy()
 
