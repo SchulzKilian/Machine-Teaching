@@ -12,6 +12,7 @@ from MachinePunishment import PunisherLoss
 
 
 
+
 # Define training parameters
 batch_size = 16
 learning_rate = 0.001
@@ -102,3 +103,6 @@ for i, model in enumerate(models):
     print(f'Accuracy of model {i+1}: {accuracy}%')
 
     torch.save(model.state_dict(), 'trained_model.pth')
+
+
+    

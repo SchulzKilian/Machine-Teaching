@@ -86,7 +86,8 @@ class PunisherLoss(nn.Module):
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
-            return self.custom_loss_function(inputs, targets, self.training_dataset)
+            self.custom_loss_function(inputs, targets, self.training_dataset)
+            return self.default_loss(inputs,targets)
         
         else:
             print("default")
@@ -98,15 +99,10 @@ class PunisherLoss(nn.Module):
         self.setradius(radius)
 
     
-    def compute_influence(self, gradients, pixel):
-        # For simplicity, let's assume we just return the gradient of the loss w.r.t the pixel
 
-        loss = torch.sum(gradients * pixel)
-        loss.backward()
-        return -pixel.grad
+ 
 
-
-    def backward(self):   
+    def backwardx(self):   
  
         for name,layer in reversed(list(self.model.named_children())):
             print("Name of layer is "+name)
@@ -313,6 +309,8 @@ class PunisherLoss(nn.Module):
         
         # Get the gradients with respect to the input
         gradients = input_data.grad.clone().detach()
+
+        gradients[gradients < 0] = 0
 
         for layer in self.model.modules():
             for parameter in layer.parameters():
