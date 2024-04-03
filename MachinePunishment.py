@@ -34,6 +34,7 @@ class PunisherLoss(nn.Module):
         self.threshold = threshold
         self.epochs = []
         self.loss = None
+        self.val = None
         self.mode = mode
         self.model = model
         self.radius = 15
@@ -87,7 +88,7 @@ class PunisherLoss(nn.Module):
             print("custom")
             self.epochs.append(epoch)
             self.custom_loss_function(inputs, targets, self.training_dataset)
-            return self.default_loss(inputs,targets)
+            return self.default_loss(inputs,targets)+ self.val
         
         else:
             print("default")
@@ -258,6 +259,7 @@ class PunisherLoss(nn.Module):
 
 
 
+
             def close_window():
                 image_width, image_height = drawn_image.size
                 scaled_width = image_width // scaling_factor
@@ -273,9 +275,10 @@ class PunisherLoss(nn.Module):
                         # Check if the pixel is marked in the scaled image and has non-zero saliency
                         if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
                             # Mark the corresponding pixel in the scaled marking tensor
-                            self.marked_pixels[0, y, x],self.marked_pixels[1,y, x],self.marked_pixels[2,y, x] = -252.0,-255.0,-255.0
+                            self.marked_pixels[0, y, x],self.marked_pixels[1,y, x],self.marked_pixels[2,y, x] = -1.0,-1.0,-1.0
                 print("Number of marked pixels:", torch.sum(self.marked_pixels).item())
                 root.destroy()
+                
 
 
 
@@ -284,6 +287,8 @@ class PunisherLoss(nn.Module):
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
 
         root.mainloop()
+        self.val = torch.sum(self.gradients * self.marked_pixels).item()
+        print("value is "+str(self.val))
         return self
     
 
@@ -308,24 +313,13 @@ class PunisherLoss(nn.Module):
         self.loss.backward(retain_graph=True)
         
         # Get the gradients with respect to the input
-        gradients = input_data.grad.clone().detach()
+        self.gradients = input_data.grad.clone().detach()
 
-        gradients[gradients < 0] = 0
+        self.gradients[self.gradients < 0] = 0
 
-        for layer in self.model.modules():
-            for parameter in layer.parameters():
-                parameter.grad_input = gradients.clone()
-
-
-
-        # compute the gradients wrt input before i set the egatives to zero
-        # self.input_gradient_backpropagation(gradients, input_data)
-
-        # Set negative gradients to zero
-        gradients[gradients < 0] = 0
 
         # Compute the importance weights based on gradients
-        importance_weights = torch.mean(gradients, dim=(1, 2, 3), keepdim=True)
+        importance_weights = torch.mean(self.gradients, dim=(1, 2, 3), keepdim=True)
 
         # Weighted input data
         weighted_input_data = F.relu(input_data * importance_weights)
