@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import torch.nn.functional as F
+from captum.attr import IntegratedGradients
 import enum
 
 class Mode(enum.Enum):
@@ -38,6 +39,7 @@ class PunisherLoss(nn.Module):
         self.mode = mode
         self.model = model
         self.radius = 15
+        self.ig = IntegratedGradients(model)
         self.training_dataset = training_dataset
         if not default_loss:
             self.default_loss = nn.CrossEntropyLoss()
@@ -87,8 +89,8 @@ class PunisherLoss(nn.Module):
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
-            self.custom_loss_function(inputs, targets, self.training_dataset)
-            return self.default_loss(inputs,targets)+ self.val
+            return self.custom_loss_function(inputs, targets, self.training_dataset)
+
         
         else:
             print("default")
@@ -103,38 +105,19 @@ class PunisherLoss(nn.Module):
 
  
 
-    def backwardx(self):   
+    def backward(self):   
  
-        for name,layer in reversed(list(self.model.named_children())):
-            print("Name of layer is "+name)
-            print("The amount of parameters within this layer is "+ str(len(list(layer.parameters()))))
-            update = True
-            if layer in self.last_third_layers or True:
-                update = False
-            # Backpropagate through the layer to obtain gradients with respect to the input
-            for parameter in layer.parameters():
-                if parameter.grad is not None:
-                    if update:
-                        parameter.grad.zero_()
-                        continue
-                    
-                    grad_input = parameter.grad_input.clone()
-                    grad_input = grad_input.squeeze(0).squeeze(0)
-                    marked_pixels = self.marked_pixels
-                    print("shapes are "+ str(marked_pixels.shape)+ " and "+str(grad_input.shape))
-                    with torch.no_grad():
-                        update = torch.sum(grad_input * marked_pixels).item()# /0.001
-                        # print(update)
-                        if self.mode == Mode.ADJUST:
-                            update_tensor = torch.full(parameter.grad.shape, update)
-                            parameter.grad = update_tensor
-                        elif self.mode == Mode.NUKE:
-                            print("Update"+str(update))
-                            if update < 0:
-                                update_tensor = torch.full(parameter.grad.shape,update)
-                                parameter.data = parameter.data + update_tensor
-                                parameter.grad.zero_()
-                                print("The shape of the parameter is " +str(parameter.data.shape))
+        for name, module in self.model.named_children():
+            if isinstance(module, torch.nn.Linear):
+                # Activation tensor
+                activation_tensor = getattr(self.model, name.replace('.', '_'))
+
+                # Compute integrated gradients for the activation tensor
+                attrs = self.ig.attribute(activation_tensor, target=activation_tensor)     
+                marked_pixels = self.marked_pixels
+                print("shapes are "+ str(marked_pixels.shape)+ " and "+str(attrs.shape))
+
+
 
 
 
@@ -287,11 +270,9 @@ class PunisherLoss(nn.Module):
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
 
         root.mainloop()
-        self.val = torch.sum(self.gradients * self.marked_pixels).item()
-        print("value is "+str(self.val))
+
         return self
     
-
 
 
 
