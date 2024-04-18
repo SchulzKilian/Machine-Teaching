@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import torch.nn.functional as F
-from captum.attr import IntegratedGradients
+import copy
 import enum
 
 class Mode(enum.Enum):
@@ -17,13 +17,6 @@ class Mode(enum.Enum):
 
 
 
-class ActivationHook:
-    def __init__(self):
-        self.activations = []
-
-
-    def __call__(self, module, input, output):
-        self.activations.append(output)
 
 
 
@@ -35,31 +28,59 @@ class PunisherLoss(nn.Module):
         self.threshold = threshold
         self.epochs = []
         self.loss = None
+        self.format = None
         self.val = None
+        self.real = True
+        self.input = None
         self.mode = mode
+        self.last_layer_linear=False
+        self.changed_activations= {}
+        
         self.model = model
         self.radius = 15
-        self.ig = IntegratedGradients(model)
         self.training_dataset = training_dataset
         if not default_loss:
             self.default_loss = nn.CrossEntropyLoss()
         else:
             self.default_loss = default_loss
-        self.save_last_third_layers()
+        self.activations = {}  # Dictionary to store activations for each dense layer
+        self.prev_layer_weights = self.get_previous_weights()
+        # Define hooks
+        def register_hooks(module,name):
+            module.register_forward_hook(lambda module, input, output, name=name: self.forward_hook(module, input, output, name))
 
-    def save_last_third_layers(self):
-        self.last_third_layers = []
+
+        previous = False
+        prev_mod = None
+        for name, module in self.model.named_children():
+            if previous:     
+                register_hooks(prev_mod, name)
+                previous = False
+            if isinstance(module, nn.Linear):
+                prev_mod = module
+                previous = True
+        if previous:
+            self.last_layer_linear = True
+
+    def get_previous_weights(self):
+        prev_weights = {}
+        previous = False
+        for name, module in self.model.named_children():
+            if previous:
+                prev_weights[name]= weights
+                previous = False
+            if isinstance(module, nn.Linear):
+                previous = True
+                weights = module.weight
+        if previous:
+            prev_weights["output"]=weights
+
+            
+
         
 
-        total_layers = len(list(self.model.children()))
-        
-        start_index = total_layers // 3 * 2
-        
-        # Iterate through the model's children
-        for idx, (name, module) in enumerate(self.model.named_children()):
-            if idx >= start_index:
-                self.last_third_layers.append(module)
-        
+        return prev_weights
+            
 
     def item(self):
         return self.loss.item()
@@ -105,30 +126,76 @@ class PunisherLoss(nn.Module):
 
  
 
-    def backward(self):   
- 
-        for name, module in self.model.named_children():
-            if isinstance(module, torch.nn.Linear):
-                # Activation tensor
-                activation_tensor = getattr(self.model, name.replace('.', '_'))
+    def backward(self):
+        newlayers = {}
+        if self.changed_activations=={}:
+            self.default_loss.zero_grad()
+            return self.default_loss
+        for item in self.activations.keys():
+            difference_change=abs(self.activations[item]-self.changed_activations[item])
+            print("shapes are")
+            print(self.prev_layer_weights[item].shape)
+            print(difference_change.squeeze(0).shape)
+            weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)
+            anti_overfitting_constant = weight_value.mean
+            newlayers[item]= (weight_value.mean()-weight_value)*1/0.001
+        for name, layer in self.model.named_children():
+            try:
+                layer.grad = newlayers[name] 
+            except:
+                layer.zero_grad()                
+        self.changed_activations = {}
+        
+    def invert_process_image(self,image_pil):
+        image_np = np.array(image_pil)
+        if len(image_np.shape) == 3 and image_np.shape[2] == 3:  # RGB image
 
-                # Compute integrated gradients for the activation tensor
-                attrs = self.ig.attribute(activation_tensor, target=activation_tensor)     
-                marked_pixels = self.marked_pixels
-                print("shapes are "+ str(marked_pixels.shape)+ " and "+str(attrs.shape))
-
-
-
-
-
-
-                            
-
+            # Reverse scaling and clipping
+            image_np = np.clip(image_np, 0, 255).astype(np.float32) / 255.0
+            # Reverse mean subtraction and division by standard deviation
+            mean = [0.485, 0.456, 0.406]
+            std = [0.229, 0.224, 0.225]
+            image_np = (image_np - mean) / std
+            return torch.from_numpy(image_np.transpose(2, 0, 1)).float()
+        elif len(image_np.shape) == 2:  # Grayscale image
+            image_np = (image_np / 255).astype(np.float32)
+            return torch.from_numpy((image_np * 255).astype(np.uint8))
+        elif len(image_np.shape) == 3 and image_np.shape[2] == 4:  # RGBA image
+            image_np = (image_np / 255).astype(np.float32)
+            return torch.from_numpy((image_np * 255).astype(np.uint8))
+        else:
+            raise ValueError("Input image must have 2 or 3 dimensions.")
 
             
-                        
+    def process_image(self,image):
+        image_np = image.squeeze().detach().numpy()  
 
-            
+        if len(image_np.shape) == 2:  # Grayscale image
+
+            image_np = (image_np * 255).astype(np.uint8)
+            image_pil = Image.fromarray(image_np, 'L')
+        elif len(image_np.shape) == 3: 
+            if image_np.shape[0] == 3:
+                # Convert from CxHxW to HxWxC
+                image_np = np.transpose(image_np, (1, 2, 0))
+                image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
+                image_np = np.clip(image_np, 0, 255).astype(np.uint8)
+                image_pil = Image.fromarray(image_np, 'RGB')
+            elif image_np.shape[2] == 3:
+                image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
+                image_np = np.clip(image_np, 0, 255).astype(np.uint8)
+                image_pil = Image.fromarray(image_np)
+
+        elif len(image_np.shape) == 4 and image_np.shape[0] == 4:  # RGBA image
+            # Unnormalize the RGBA image
+            image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
+            # Convert the NumPy array to an RGBA PIL Image
+            image_pil = Image.fromarray(image_np, 'RGBA') 
+        else:
+            raise ValueError("Input image must have 2 or 3 dimensions.")
+
+        return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
+        
 
     def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
         root = tk.Tk()
@@ -148,35 +215,11 @@ class PunisherLoss(nn.Module):
         # Load and display each image on the canvas
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             image, label = training_dataset[idx]
-            image_np = image.squeeze().detach().numpy()  # Assuming grayscale image, and un-normalizing
+            mean = [0.485, 0.456, 0.406]
+            std = [0.229, 0.224, 0.225]
 
-            if len(image_np.shape) == 2:  # Grayscale image
 
-                image_np = (image_np * 255).astype(np.uint8)
-
-                image_pil = Image.fromarray(image_np, 'L')
-            elif len(image_np.shape) == 3: 
-                if image_np.shape[0] == 3:
-                    # Convert from CxHxW to HxWxC
-                    image_np = np.transpose(image_np, (1, 2, 0))
-                    image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
-                    image_np = np.clip(image_np, 0, 255).astype(np.uint8)
-                    image_pil = Image.fromarray(image_np, 'RGB')
-                elif image_np.shape[2] == 3:
-                    image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
-                    image_np = np.clip(image_np, 0, 255).astype(np.uint8)
-                    image_pil = Image.fromarray(image_np)
-
-            elif len(image_np.shape) == 4 and image_np.shape[0] == 4:  # RGBA image
-                # Unnormalize the RGBA image
-                image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
-                # Convert the NumPy array to an RGBA PIL Image
-                image_pil = Image.fromarray(image_np, 'RGBA') 
-            else:
-                raise ValueError("Input image must have 2 or 3 dimensions.")
-
-            image_pil = Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
-
+            image_pil = self.process_image(self.invert_process_image(self.process_image(image)))
 
 
             saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
@@ -241,29 +284,42 @@ class PunisherLoss(nn.Module):
 
 
 
-
-
             def close_window():
+                # Create a copy of the drawn_image
+                copied_image = copy.deepcopy(drawn_image)
+
                 image_width, image_height = drawn_image.size
                 scaled_width = image_width // scaling_factor
                 scaled_height = image_height // scaling_factor
-                self.marked_pixels = torch.zeros((3, scaled_height, scaled_width), dtype=torch.float)
-                
+
+                marked_pixels_count = 0  # Counter for marked pixels
+
                 for y in range(scaled_height):
                     for x in range(scaled_width):
                         # Get the corresponding coordinates in the original image
                         original_x = x * scaling_factor
                         original_y = y * scaling_factor
-                        
+
                         # Check if the pixel is marked in the scaled image and has non-zero saliency
                         if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
-                            # Mark the corresponding pixel in the scaled marking tensor
-                            self.marked_pixels[0, y, x],self.marked_pixels[1,y, x],self.marked_pixels[2,y, x] = -1.0,-1.0,-1.0
-                print("Number of marked pixels:", torch.sum(self.marked_pixels).item())
-                root.destroy()
+                            # Modify the pixel in the copied image
+                            # Example: Change the pixel color slightly (subtracting 10 from each RGB value)
+                            r, g, b = copied_image.getpixel((original_x, original_y))
+                            copied_image.putpixel((original_x, original_y), (max(0, r - 1), max(0, g - 1), max(0, b - 1)))
+                            marked_pixels_count += 1
                 
 
+                if marked_pixels_count !=0:
+                    self.real = False
+                    changed_image = self.invert_process_image(copied_image.resize((width,height)))
+                    output = self.model(changed_image)
+                    if self.last_layer_linear:
+                        self.changed_activations["output"]=output
+                    self.real = True
 
+
+                root.destroy()
+                
 
 
         close_button = tk.Button(window, text="Continue", command=close_window)
@@ -275,16 +331,24 @@ class PunisherLoss(nn.Module):
     
 
 
-
+    # Function to handle forward pass hook
+    def forward_hook(self, module, input, output,name):
+        # Store the output (activation) of the module
+        if self.real:
+            self.activations[name] = output.clone().detach()
+        else:
+            self.changed_activations[name] = output.clone().detach()
 
 
     def compute_saliency_map(self, input_data, label):
-
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
         
         # Forward pass
-        outputs = self.model(input_data)  
+        outputs = self.model(input_data) 
+        if self.last_layer_linear:
+            self.activations["output"]=outputs
+        self.input = input_data 
 
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
@@ -298,7 +362,6 @@ class PunisherLoss(nn.Module):
 
         self.gradients[self.gradients < 0] = 0
 
-
         # Compute the importance weights based on gradients
         importance_weights = torch.mean(self.gradients, dim=(1, 2, 3), keepdim=True)
 
@@ -309,9 +372,7 @@ class PunisherLoss(nn.Module):
         normalized_input = weighted_input_data / weighted_input_data.max()
 
         # Convert to numpy array
-
         saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
-
         
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
@@ -323,7 +384,6 @@ class PunisherLoss(nn.Module):
             green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
-
         elif len(saliency_map_numpy.shape) == 3:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[1], saliency_map_numpy.shape[2], 4), dtype=np.uint8)
             green_intensity = (saliency_map_numpy[1] * 255).astype(np.uint8)
@@ -335,10 +395,8 @@ class PunisherLoss(nn.Module):
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
 
-
         # Create Pillow image
         saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
-
 
         return saliency_map_pil
 
