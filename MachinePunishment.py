@@ -135,13 +135,13 @@ class PunisherLoss(nn.Module):
             difference_change=abs(self.activations[item]-self.changed_activations[item])
             print("the sum of changes is ")
             print(torch.sum(difference_change).item())
-            weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)
+            weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)*1000
             anti_overfitting_constant = weight_value.mean()
             newlayers[item]= (weight_value-anti_overfitting_constant)
         for name, layer in self.model.named_children():
             try:
-                layer.data = layer.data-newlayers[name]
-                layer.data[layer.data<0]=0
+                layer.grad = newlayers[name]
+
             except:
                 layer.zero_grad()                
         self.changed_activations = {}
@@ -168,7 +168,9 @@ class PunisherLoss(nn.Module):
 
             
     def process_image(self,image):
-        image_np = image.squeeze().detach().numpy()  
+        
+        image_np = image.squeeze().detach().numpy()
+
 
         if len(image_np.shape) == 2:  # Grayscale image
 
@@ -195,7 +197,18 @@ class PunisherLoss(nn.Module):
             raise ValueError("Input image must have 2 or 3 dimensions.")
 
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
-        
+
+
+    def image_difference(self,image1,image2):
+        import imagehash
+        hash1 = imagehash.phash(image1)
+        hash2 = imagehash.phash(image2)
+
+        # Compute hamming distance (lower is more similar)
+        hamming_distance = hash1 - hash2
+        return hamming_distance
+
+
 
     def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
         root = tk.Tk()
@@ -219,7 +232,7 @@ class PunisherLoss(nn.Module):
             std = [0.229, 0.224, 0.225]
 
 
-            image_pil = self.process_image(self.invert_process_image(self.process_image(image)))
+            image_pil = self.process_image(image)
 
 
             saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
@@ -235,6 +248,7 @@ class PunisherLoss(nn.Module):
             saliency_map = saliency_map.resize((new_width,new_height))
 
             image_pil = image_pil.resize((new_width, new_height))
+
 
             # saliency_map.putalpha(128)  # Set alpha value to 128 (0.5 opacity)
 
@@ -294,28 +308,25 @@ class PunisherLoss(nn.Module):
 
                 marked_pixels_count = 0  # Counter for marked pixels
 
-                for y in range(scaled_height-1):
-                    for x in range(scaled_width-1):
-                        # Get the corresponding coordinates in the original image
+
+                for x in range(height):
+                    for y in range(width):
                         original_x = x * scaling_factor
                         original_y = y * scaling_factor
+                        if drawn_image.getpixel((original_y, original_x)) == (255, 0, 1) and saliency_map.getpixel((original_y, original_x))[3] > 0:
+                            r,g,b = image[0,x,y].item(), image[1,x,y].item(),image[2,x,y].item()
+                            image[0,x,y],image[1,x,y], image[2,x,y]= r-1,g-1,b-1
+                            # Get the corresponding coordinates in the original image
 
-                        # Check if the pixel is marked in the scaled image and has non-zero saliency
-                        if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
-                            # Modify the pixel in the copied image
-                            # Example: Change the pixel color slightly (subtracting 1 from each RGB value)
-                            for new_x in range(original_x,original_x+scaling_factor+1):
-                                for new_y in range(original_y, original_y + scaling_factor+1):
-                                    r, g, b = copied_image.getpixel((new_x, new_y))
 
-                                    # copied_image.putpixel((new_x, new_y), (0, 0, 0))
                             marked_pixels_count += 1
-                copied_image.show()
+                self.process_image(image).resize((new_width,new_height)).show()
+                newimage= image.squeeze(0)
+
                 drawn_image.show()
                 if marked_pixels_count !=0:
                     self.real = False
-                    changed_image = self.invert_process_image(copied_image.resize((width,height)))
-                    output = self.model(changed_image)
+                    output = self.model(newimage)
                     if self.last_layer_linear:
                         self.changed_activations["output"]=output
                     self.real = True
