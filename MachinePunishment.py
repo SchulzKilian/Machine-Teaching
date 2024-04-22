@@ -133,15 +133,15 @@ class PunisherLoss(nn.Module):
             return self.default_loss
         for item in self.activations.keys():
             difference_change=abs(self.activations[item]-self.changed_activations[item])
-            print("shapes are")
-            print(self.prev_layer_weights[item].shape)
-            print(difference_change.squeeze(0).shape)
+            print("the sum of changes is ")
+            print(torch.sum(difference_change).item())
             weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)
-            anti_overfitting_constant = weight_value.mean
-            newlayers[item]= (weight_value.mean()-weight_value)*1/0.001
+            anti_overfitting_constant = weight_value.mean()
+            newlayers[item]= (weight_value-anti_overfitting_constant)
         for name, layer in self.model.named_children():
             try:
-                layer.grad = newlayers[name] 
+                layer.data = layer.data-newlayers[name]
+                layer.data[layer.data<0]=0
             except:
                 layer.zero_grad()                
         self.changed_activations = {}
@@ -286,7 +286,7 @@ class PunisherLoss(nn.Module):
 
             def close_window():
                 # Create a copy of the drawn_image
-                copied_image = copy.deepcopy(drawn_image)
+                copied_image = copy.deepcopy(image_pil)
 
                 image_width, image_height = drawn_image.size
                 scaled_width = image_width // scaling_factor
@@ -294,8 +294,8 @@ class PunisherLoss(nn.Module):
 
                 marked_pixels_count = 0  # Counter for marked pixels
 
-                for y in range(scaled_height):
-                    for x in range(scaled_width):
+                for y in range(scaled_height-1):
+                    for x in range(scaled_width-1):
                         # Get the corresponding coordinates in the original image
                         original_x = x * scaling_factor
                         original_y = y * scaling_factor
@@ -303,12 +303,15 @@ class PunisherLoss(nn.Module):
                         # Check if the pixel is marked in the scaled image and has non-zero saliency
                         if drawn_image.getpixel((original_x, original_y)) == (255, 0, 1) and saliency_map.getpixel((original_x, original_y))[3] > 0:
                             # Modify the pixel in the copied image
-                            # Example: Change the pixel color slightly (subtracting 10 from each RGB value)
-                            r, g, b = copied_image.getpixel((original_x, original_y))
-                            copied_image.putpixel((original_x, original_y), (max(0, r - 1), max(0, g - 1), max(0, b - 1)))
-                            marked_pixels_count += 1
-                
+                            # Example: Change the pixel color slightly (subtracting 1 from each RGB value)
+                            for new_x in range(original_x,original_x+scaling_factor+1):
+                                for new_y in range(original_y, original_y + scaling_factor+1):
+                                    r, g, b = copied_image.getpixel((new_x, new_y))
 
+                                    # copied_image.putpixel((new_x, new_y), (0, 0, 0))
+                            marked_pixels_count += 1
+                copied_image.show()
+                drawn_image.show()
                 if marked_pixels_count !=0:
                     self.real = False
                     changed_image = self.invert_process_image(copied_image.resize((width,height)))
