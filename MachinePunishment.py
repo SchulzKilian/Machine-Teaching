@@ -85,21 +85,7 @@ class PunisherLoss(nn.Module):
     def item(self):
         return self.loss.item()
 
-    def input_gradient_backpropagation(self, output_gradients, input_data):
-        # Ensure input_data requires gradients
-        input_data.requires_grad_(True)
-        # Perform forward pass to compute intermediate outputs
-        intermediate_outputs = []
-        output = input_data
-        for layer in self.model.children():
-            continue
-            output = layer(output)
-            intermediate_outputs.append(output)
 
-        # gradients_wrt_input = torch.autograd.grad(outputs=intermediate_outputs, inputs=input_data,
-        #                                         grad_outputs=output_gradients, retain_graph=True)
-
-        # self.grad_wrt_input = gradients_wrt_input
 
     def setradius(self, radius):
         self.radius = radius
