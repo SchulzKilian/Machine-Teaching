@@ -33,6 +33,7 @@ class PunisherLoss(nn.Module):
         self.real = True
         self.input = None
         self.mode = mode
+        self.label = None
         self.last_layer_linear=False
         self.changed_activations= {}
         
@@ -113,24 +114,37 @@ class PunisherLoss(nn.Module):
  
 
     def backward(self):
+        print("called the backwards function")
         newlayers = {}
         if self.changed_activations=={}:
             self.default_loss.zero_grad()
             return self.default_loss
         for item in self.activations.keys():
             difference_change=abs(self.activations[item]-self.changed_activations[item])
+            difference_change[difference_change>0.001]=0
+            difference_change[(difference_change > 0) & (difference_change <= 0.001)] = 1
+            print(difference_change)
+            weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)
+            newlayers[item]= weight_value
+
+            """
+            this is the correct code, i just want to test something
             print("the sum of changes is ")
             print(torch.sum(difference_change).item())
             weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)*1000
             anti_overfitting_constant = weight_value.mean()
             newlayers[item]= (weight_value-anti_overfitting_constant)
+            """
         for name, layer in self.model.named_children():
             try:
-                layer.grad = newlayers[name]
+                layer.data = newlayers[name]
 
             except:
                 layer.zero_grad()                
         self.changed_activations = {}
+
+        self.compute_saliency_map(self.input, label=self.label).show()
+
         
     def invert_process_image(self,image_pil):
         image_np = np.array(image_pil)
@@ -222,6 +236,7 @@ class PunisherLoss(nn.Module):
 
 
             saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
+            saliency_map.show()
 
             # Convert the PIL Image to a Tkinter-compatible format
             width, height = image_pil.size
@@ -285,12 +300,10 @@ class PunisherLoss(nn.Module):
 
 
             def close_window():
-                # Create a copy of the drawn_image
-                copied_image = copy.deepcopy(image_pil)
+
 
                 image_width, image_height = drawn_image.size
-                scaled_width = image_width // scaling_factor
-                scaled_height = image_height // scaling_factor
+
 
                 marked_pixels_count = 0  # Counter for marked pixels
 
@@ -343,7 +356,7 @@ class PunisherLoss(nn.Module):
     def compute_saliency_map(self, input_data, label):
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
-        
+        self.label = label
         # Forward pass
         outputs = self.model(input_data) 
         if self.last_layer_linear:

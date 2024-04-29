@@ -14,10 +14,10 @@ from MachinePunishment import PunisherLoss
 
 
 # Define training parameters
-batch_size = 2
+batch_size = 10
 learning_rate = 0.001
 num_epochs = 10
-data_size = 2
+data_size = 100
 arg = "pets"
 
 
@@ -80,7 +80,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 models = [SimpleCNN(classes,channels), ]
 for model in models:
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(1,train_dataset,model)
+    criterion = PunisherLoss(5,train_dataset,model)
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model
