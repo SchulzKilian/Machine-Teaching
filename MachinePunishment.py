@@ -1,15 +1,11 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from PIL import Image, ImageTk, ImageDraw, ImageOps
+from PIL import Image, ImageTk, ImageDraw
 import tkinter as tk
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import torch.nn.functional as F
-import copy
 import enum
-
 class Mode(enum.Enum):
     NUKE = 'nuke'
     ADJUST = 'adjust'
@@ -228,8 +224,6 @@ class PunisherLoss(nn.Module):
         # Load and display each image on the canvas
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             image, label = training_dataset[idx]
-            mean = [0.485, 0.456, 0.406]
-            std = [0.229, 0.224, 0.225]
 
 
             image_pil = self.process_image(image)
@@ -300,10 +294,6 @@ class PunisherLoss(nn.Module):
 
 
             def close_window():
-
-
-                image_width, image_height = drawn_image.size
-
 
                 marked_pixels_count = 0  # Counter for marked pixels
 
