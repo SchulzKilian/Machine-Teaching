@@ -3,6 +3,7 @@ import torch.nn as nn
 from PIL import Image, ImageTk, ImageDraw
 import tkinter as tk
 import matplotlib.pyplot as plt
+import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
 import enum
@@ -27,6 +28,7 @@ class PunisherLoss(nn.Module):
         self.epochs = []
         self.loss = None
         self.format = None
+        self.optimizer = optim.SGD(model.parameters,0.001)
         self.val = None
         self.real = True
         self.input = None
@@ -212,6 +214,22 @@ class PunisherLoss(nn.Module):
         # Compute hamming distance (lower is more similar)
         hamming_distance = hash1 - hash2
         return hamming_distance
+    
+    def train_on_image(self, image,label):
+
+        output = self.model(image)
+        loss = self.default_loss(image, label)
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        return output
+
+
+
+    def am_I_overfitting(self):
+
+        pass
+
 
 
 
