@@ -10,6 +10,8 @@ class Mode(enum.Enum):
     NUKE = 'nuke'
     ADJUST = 'adjust'
     LOSS = 'loss'
+    SCALE_UP = 'scale_up'
+
 
 
 
@@ -19,7 +21,7 @@ class Mode(enum.Enum):
 
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
-    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.NUKE):
+    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.SCALE_UP):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
         self.epochs = []
@@ -32,7 +34,6 @@ class PunisherLoss(nn.Module):
         self.label = None
         self.last_layer_linear=False
         self.changed_activations= {}
-        
         self.model = model
         self.radius = 15
         self.training_dataset = training_dataset
@@ -115,13 +116,8 @@ class PunisherLoss(nn.Module):
         if self.changed_activations=={}:
             self.default_loss.zero_grad()
             return self.default_loss
-        for item in self.activations.keys():
-            difference_change=abs(self.activations[item]-self.changed_activations[item])
-            difference_change[difference_change>0.001]=0
-            difference_change[(difference_change > 0) & (difference_change <= 0.001)] = 1
-            print(difference_change)
-            weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)
-            newlayers[item]= weight_value
+
+            
 
             """
             this is the correct code, i just want to test something
@@ -132,12 +128,25 @@ class PunisherLoss(nn.Module):
             newlayers[item]= (weight_value-anti_overfitting_constant)
             """
         for name, layer in self.model.named_children():
-            try:
-                layer.data = newlayers[name]
+            if name not in self.activations.keys():
+                layer.zero_grad()
+                continue
+            
 
-            except:
-                layer.zero_grad()                
+            difference_change=abs(self.activations[name]-self.changed_activations[name])
+            difference_change[difference_change>0.001]=0
+            difference_change[(difference_change > 0)] = 1
+            amount = len(difference_change[difference_change<0.001])  
+            print(difference_change)
+            weight_value = self.prev_layer_weights[name]*difference_change.squeeze(0).unsqueeze(1)
+            newlayers[name]= weight_value
+            weight_sum_change = torch.sum(weight_value).item()-torch.sum(self.prev_layer_weights[name]).item()
+            weight_value[weight_value!=0]+= weight_sum_change/amount
+            layer.zero_grad()
+            layer.data = weight_value
+
         self.changed_activations = {}
+        self.activations = {}
 
         self.compute_saliency_map(self.input, label=self.label).show()
 
@@ -245,7 +254,6 @@ class PunisherLoss(nn.Module):
             image_pil = image_pil.resize((new_width, new_height))
 
 
-            # saliency_map.putalpha(128)  # Set alpha value to 128 (0.5 opacity)
 
             # Blend the saliency map with the input image
             blended_image = Image.alpha_composite(image_pil.convert('RGBA'), saliency_map)
