@@ -28,12 +28,12 @@ class PunisherLoss(nn.Module):
         self.epochs = []
         self.loss = None
         self.format = None
-        self.optimizer = optim.SGD(model.parameters,0.001)
+        self.optimizer = optim.SGD(model.parameters(),0.001)
         self.val = None
         self.real = True
         self.input = None
         self.mode = mode
-        self.validation_set = self.create_validation_set(100, training_dataset)
+        self.validation_set = self.create_validation_set(training_dataset,100)
         self.label = None
         self.last_layer_linear=False
         self.changed_activations= {}
@@ -160,6 +160,7 @@ class PunisherLoss(nn.Module):
         threshold = loss *1.1
         while loss <= threshold:
             self.train_on_image()
+            loss = self.am_I_overfitting()
 
         self.compute_saliency_map(self.input, label=self.label).show()
 
