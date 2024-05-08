@@ -238,7 +238,7 @@ class PunisherLoss(nn.Module):
     def train_on_image(self):
 
         output = self.model(self.input)
-        loss = self.default_loss(output, self.label)
+        loss = self.default_loss(output, self.target)
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
@@ -249,7 +249,7 @@ class PunisherLoss(nn.Module):
     def am_I_overfitting(self):
         outputs = self.model(self.validation_set[0])
         loss = self.default_loss(outputs,self.validation_set[1])
-        print("the current loss is "+loss)
+        print("the current loss is "+str(loss.item()))
         return loss
 
 
@@ -358,10 +358,10 @@ class PunisherLoss(nn.Module):
 
 
                             marked_pixels_count += 1
-                self.process_image(image).resize((new_width,new_height)).show()
+                self.process_image(image).resize((new_width,new_height))
                 newimage= image.squeeze(0)
 
-                drawn_image.show()
+                # drawn_image.show()
                 if marked_pixels_count !=0:
                     self.real = False
                     output = self.model(newimage)
@@ -404,6 +404,7 @@ class PunisherLoss(nn.Module):
 
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
+        self.target = target
         self.loss = self.default_loss(outputs, target)
 
         # Backpropagate to compute gradients with respect to the output
