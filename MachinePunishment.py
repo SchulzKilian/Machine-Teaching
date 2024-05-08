@@ -33,9 +33,11 @@ class PunisherLoss(nn.Module):
         self.real = True
         self.input = None
         self.mode = mode
+        self.validation_set = self.create_validation_set(100, training_dataset)
         self.label = None
         self.last_layer_linear=False
         self.changed_activations= {}
+        self.layer_factors = {}
         self.model = model
         self.radius = 15
         self.training_dataset = training_dataset
@@ -61,7 +63,11 @@ class PunisherLoss(nn.Module):
                 previous = True
         if previous:
             self.last_layer_linear = True
-
+    def create_validation_set(self, dataset, num_samples):
+        indices = torch.randperm(len(dataset))[:num_samples]
+        images = torch.stack([dataset[i][0] for i in indices])
+        labels = torch.tensor([dataset[i][1] for i in indices])
+        return images, labels
     def get_previous_weights(self):
         prev_weights = {}
         previous = False
@@ -138,6 +144,7 @@ class PunisherLoss(nn.Module):
             difference_change=abs(self.activations[name]-self.changed_activations[name])
             difference_change[difference_change>0.001]=0
             difference_change[(difference_change > 0)] = 1
+            self.layer_factors[name]=difference_change
             amount = len(difference_change[difference_change<0.001])  
             print(difference_change)
             weight_value = self.prev_layer_weights[name]*difference_change.squeeze(0).unsqueeze(1)
@@ -149,6 +156,10 @@ class PunisherLoss(nn.Module):
 
         self.changed_activations = {}
         self.activations = {}
+        loss = self.am_I_overfitting()
+        threshold = loss *1.1
+        while loss <= threshold:
+            self.train_on_image()
 
         self.compute_saliency_map(self.input, label=self.label).show()
 
@@ -173,7 +184,7 @@ class PunisherLoss(nn.Module):
         else:
             raise ValueError("Input image must have 2 or 3 dimensions.")
 
-            
+        
     def process_image(self,image):
         
         image_np = image.squeeze().detach().numpy()
@@ -205,6 +216,14 @@ class PunisherLoss(nn.Module):
 
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
+    def adjust_model(self,backwards):
+        for name, layer in self.model.named_parameters():   
+            if backwards:
+                setattr(self.model,name,)
+            else:
+                setattr(self.model, name ,)
+
+
 
     def image_difference(self,image1,image2):
         import imagehash
@@ -215,20 +234,22 @@ class PunisherLoss(nn.Module):
         hamming_distance = hash1 - hash2
         return hamming_distance
     
-    def train_on_image(self, image,label):
+    def train_on_image(self):
 
-        output = self.model(image)
-        loss = self.default_loss(image, label)
+        output = self.model(self.input)
+        loss = self.default_loss(output, self.label)
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
-        return output
+        
 
 
 
     def am_I_overfitting(self):
-
-        pass
+        outputs = self.model(self.validation_set[0])
+        loss = self.default_loss(outputs,self.validation_set[1])
+        print("the current loss is "+loss)
+        return loss
 
 
 
@@ -250,6 +271,7 @@ class PunisherLoss(nn.Module):
 
         # Load and display each image on the canvas
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
+            
             image, label = training_dataset[idx]
 
 
