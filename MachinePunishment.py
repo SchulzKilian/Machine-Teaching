@@ -38,6 +38,7 @@ class PunisherLoss(nn.Module):
         self.last_layer_linear=False
         self.changed_activations= {}
         self.layer_factors = {}
+        self.original_layers = {}
         self.model = model
         self.radius = 15
         self.training_dataset = training_dataset
@@ -63,11 +64,13 @@ class PunisherLoss(nn.Module):
                 previous = True
         if previous:
             self.last_layer_linear = True
+
     def create_validation_set(self, dataset, num_samples):
         indices = torch.randperm(len(dataset))[:num_samples]
         images = torch.stack([dataset[i][0] for i in indices])
         labels = torch.tensor([dataset[i][1] for i in indices])
         return images, labels
+    
     def get_previous_weights(self):
         prev_weights = {}
         previous = False
@@ -146,21 +149,27 @@ class PunisherLoss(nn.Module):
             difference_change[(difference_change > 0)] = 1
             self.layer_factors[name]=difference_change
             amount = len(difference_change[difference_change<0.001])  
-            print(difference_change)
+            self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
+            self.original_layers[name] = layer.weight
             weight_value = self.prev_layer_weights[name]*difference_change.squeeze(0).unsqueeze(1)
             newlayers[name]= weight_value
             weight_sum_change = torch.sum(weight_value).item()-torch.sum(self.prev_layer_weights[name]).item()
             weight_value[weight_value!=0]+= weight_sum_change/amount
             layer.zero_grad()
-            layer.data = weight_value
+            # layer.data = weight_value
 
         self.changed_activations = {}
         self.activations = {}
+        self.adjust_model(False)
         loss = self.am_I_overfitting()
+        prev_loss = loss
         threshold = loss *1.1
-        while loss <= threshold:
+        while loss <= threshold and loss <prev_loss:
+            self.adjust_model(True)
             self.train_on_image()
+            self.adjust_model(False)
             loss = self.am_I_overfitting()
+            prev_loss = loss
 
         self.compute_saliency_map(self.input, label=self.label).show()
 
@@ -218,11 +227,14 @@ class PunisherLoss(nn.Module):
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
     def adjust_model(self,backwards):
-        for name, layer in self.model.named_parameters():   
+
+        for name, layer in self.model.named_parameters(): 
+            if name not in self.activations.keys():
+                continue  
             if backwards:
-                setattr(self.model,name,)
+                setattr(self.model,name,layer*self.layer_factors[name])
             else:
-                setattr(self.model, name ,)
+                setattr(self.model, name ,self.original_layers[name])
 
 
 
