@@ -161,15 +161,21 @@ class PunisherLoss(nn.Module):
         self.changed_activations = {}
         self.activations = {}
         self.adjust_model(False)
-        loss = self.am_I_overfitting()
+        loss = self.am_I_overfitting().item()
         prev_loss = loss
         threshold = loss *1.1
-        while loss <= threshold and loss <prev_loss:
+        while loss<= threshold and loss <=prev_loss:
             self.adjust_model(True)
             self.train_on_image()
             self.adjust_model(False)
-            loss = self.am_I_overfitting()
             prev_loss = loss
+            loss = self.am_I_overfitting().item()
+            
+        if loss > threshold:
+            print("We went out of the image training because loss was "+str(loss) + " and threshold was "+ str(threshold))
+        else:
+            print("We went out of the image training because loss was "+str(loss) + " and previous loss was "+ str(prev_loss))
+
 
         self.compute_saliency_map(self.input, label=self.label).show()
 
@@ -232,6 +238,7 @@ class PunisherLoss(nn.Module):
             if name not in self.activations.keys():
                 continue  
             if backwards:
+                self.original_layers[name]= layer.weight
                 setattr(self.model,name,layer*self.layer_factors[name])
             else:
                 setattr(self.model, name ,self.original_layers[name])
