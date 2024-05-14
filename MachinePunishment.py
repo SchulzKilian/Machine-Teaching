@@ -157,28 +157,22 @@ class PunisherLoss(nn.Module):
             weight_value[weight_value!=0]+= weight_sum_change/amount
             layer.zero_grad()
             # layer.data = weight_value
+        self.improve_image_attention()
 
-        self.changed_activations = {}
-        self.activations = {}
-        self.adjust_model(False)
+
+    def improve_image_attention(self):
+        # self.adjust_model(False)
         loss = self.am_I_overfitting().item()
         prev_loss = loss
         threshold = loss *1.1
         while loss<= threshold and loss <=prev_loss:
-            self.adjust_model(True)
+            # self.adjust_model(True)
             self.train_on_image()
-            self.adjust_model(False)
+            # self.adjust_model(False)
+            # loss = self.am_I_overfitting()
             prev_loss = loss
             loss = self.am_I_overfitting().item()
-            
-        if loss > threshold:
-            print("We went out of the image training because loss was "+str(loss) + " and threshold was "+ str(threshold))
-        else:
-            print("We went out of the image training because loss was "+str(loss) + " and previous loss was "+ str(prev_loss))
-
-
-        self.compute_saliency_map(self.input, label=self.label).show()
-
+            self.compute_saliency_map(self.input,self.label).show()
         
     def invert_process_image(self,image_pil):
         image_np = np.array(image_pil)
@@ -255,9 +249,13 @@ class PunisherLoss(nn.Module):
         return hamming_distance
     
     def train_on_image(self):
+        weight_loss = 0
+        for name, layer in self.model.named_parameters():
+            if name in self.original_layers.keys():
+                weight_loss += layer.data*self.layer_factors[name]
 
         output = self.model(self.input)
-        loss = self.default_loss(output, self.target)
+        loss = self.default_loss(output, self.target)+ weight_loss
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
@@ -432,7 +430,7 @@ class PunisherLoss(nn.Module):
         # Get the gradients with respect to the input
         self.gradients = input_data.grad.clone().detach()
 
-        self.gradients[self.gradients < 0] = 0
+        # self.gradients[self.gradients < 0] = 0
 
         # Compute the importance weights based on gradients
         importance_weights = torch.mean(self.gradients, dim=(1, 2, 3), keepdim=True)

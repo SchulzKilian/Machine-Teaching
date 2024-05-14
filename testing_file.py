@@ -14,9 +14,9 @@ from MachinePunishment import PunisherLoss
 
 
 # Define training parameters
-batch_size = 10
+batch_size = 5
 learning_rate = 0.001
-num_epochs = 10
+num_epochs = 3
 data_size = 100
 arg = "pets"
 
