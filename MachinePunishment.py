@@ -250,12 +250,16 @@ class PunisherLoss(nn.Module):
     
     def train_on_image(self):
         weight_loss = 0
+        exploration_loss = 0
         for name, layer in self.model.named_parameters():
             if name in self.original_layers.keys():
                 weight_loss += layer.data*self.layer_factors[name]
+                
+            exploration_loss -= torch.sum(layer.data)
+
 
         output = self.model(self.input)
-        loss = self.default_loss(output, self.target)+ weight_loss
+        loss = self.default_loss(output, self.target)+ weight_loss + exploration_loss*0.1
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
@@ -291,7 +295,6 @@ class PunisherLoss(nn.Module):
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             
             image, label = training_dataset[idx]
-
 
             image_pil = self.process_image(image)
 
@@ -428,7 +431,9 @@ class PunisherLoss(nn.Module):
         self.loss.backward(retain_graph=True)
         
         # Get the gradients with respect to the input
+
         self.gradients = input_data.grad.clone().detach()
+
 
         # self.gradients[self.gradients < 0] = 0
 
