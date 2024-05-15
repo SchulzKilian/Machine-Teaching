@@ -147,7 +147,7 @@ class PunisherLoss(nn.Module):
             difference_change=abs(self.activations[name]-self.changed_activations[name])
             difference_change[difference_change>0.001]=0
             difference_change[(difference_change > 0)] = 1
-            self.layer_factors[name]=difference_change
+            self.layer_factors[name]=difference_change* self.marked_pixels_count/(self.width*self.height)
             amount = len(difference_change[difference_change<0.001])  
             self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
             self.original_layers[name] = layer.weight
@@ -259,7 +259,7 @@ class PunisherLoss(nn.Module):
 
 
         output = self.model(self.input)
-        loss = self.default_loss(output, self.target)+ weight_loss + exploration_loss*0.1
+        loss = self.default_loss(output, self.target)+ weight_loss # exploration_loss*0.1
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
@@ -304,6 +304,7 @@ class PunisherLoss(nn.Module):
 
             # Convert the PIL Image to a Tkinter-compatible format
             width, height = image_pil.size
+            self.width, self.height = width,height
 
             scaling_factor = 800//max(width,height)
 
@@ -364,7 +365,7 @@ class PunisherLoss(nn.Module):
 
             def close_window():
 
-                marked_pixels_count = 0  # Counter for marked pixels
+                self.marked_pixels_count = 0  # Counter for marked pixels
 
 
                 for x in range(height):
@@ -377,12 +378,12 @@ class PunisherLoss(nn.Module):
                             # Get the corresponding coordinates in the original image
 
 
-                            marked_pixels_count += 1
+                            self.marked_pixels_count += 1
                 self.process_image(image).resize((new_width,new_height))
                 newimage= image.squeeze(0)
 
                 # drawn_image.show()
-                if marked_pixels_count !=0:
+                if self.marked_pixels_count !=0:
                     self.real = False
                     output = self.model(newimage)
                     if self.last_layer_linear:
