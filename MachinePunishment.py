@@ -145,9 +145,10 @@ class PunisherLoss(nn.Module):
             
 
             difference_change=abs(self.activations[name]-self.changed_activations[name])
+            mean = difference_change.mean()
             difference_change[difference_change>0.001]=0
-            difference_change[(difference_change > 0)] = 1
-            self.layer_factors[name]=difference_change* self.marked_pixels_count/(self.width*self.height)
+            difference_change[(difference_change >0)] = 1
+            self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)
             amount = len(difference_change[difference_change<0.001])  
             self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
             self.original_layers[name] = layer.weight
@@ -166,7 +167,8 @@ class PunisherLoss(nn.Module):
         prev_loss = loss
         threshold = loss *1.1
         while loss<= threshold and loss <=prev_loss:
-            # self.adjust_model(True)
+            self.adjust_model(True)
+            self.compute_saliency_map(self.input,self.label).show()
             self.train_on_image()
             # self.adjust_model(False)
             # loss = self.am_I_overfitting()
@@ -227,15 +229,16 @@ class PunisherLoss(nn.Module):
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
     def adjust_model(self,backwards):
-
-        for name, layer in self.model.named_parameters(): 
-            if name not in self.activations.keys():
-                continue  
+        prev_name = ""
+        for layer, name in self.model.named_parameters(): 
+            if prev_name not in self.prev_layer_weights.keys():
+                prev_name= name
+                continue
             if backwards:
-                self.original_layers[name]= layer.weight
-                setattr(self.model,name,layer*self.layer_factors[name])
+                setattr(self.model,prev_name,self.prev_layer_weights[name]*self.layer_factors[name])
             else:
                 setattr(self.model, name ,self.original_layers[name])
+            prev_name = name
 
 
 
@@ -259,7 +262,7 @@ class PunisherLoss(nn.Module):
 
 
         output = self.model(self.input)
-        loss = self.default_loss(output, self.target)+ weight_loss # exploration_loss*0.1
+        loss = self.default_loss(output, self.target) + weight_loss # exploration_loss*0.1
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
