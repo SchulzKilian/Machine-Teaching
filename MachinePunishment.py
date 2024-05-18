@@ -145,9 +145,10 @@ class PunisherLoss(nn.Module):
             
 
             difference_change=abs(self.activations[name]-self.changed_activations[name])
-            mean = difference_change.mean()
-            difference_change[difference_change>0.001]=0
-            difference_change[(difference_change >0)] = 1
+            percentile = (self.marked_pixels_count*3)/self.input.numel()
+            limit = torch.quantile(difference_change, percentile)
+            difference_change[(difference_change>limit)]=0
+            difference_change[(difference_change > 0)] = 1
             self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)
             amount = len(difference_change[difference_change<0.001])  
             self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
