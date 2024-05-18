@@ -146,17 +146,16 @@ class PunisherLoss(nn.Module):
 
             difference_change=abs(self.activations[name]-self.changed_activations[name])
             percentile = (self.marked_pixels_count*3)/self.input.numel()
-            limit = torch.quantile(difference_change, percentile)
+            limit = torch.quantile(difference_change, percentile).item()
+            print("The limit in this case was "+str(limit))
             difference_change[(difference_change>limit)]=0
             difference_change[(difference_change > 0)] = 1
-            self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)
-            amount = len(difference_change[difference_change<0.001])  
+            self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
             self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
             self.original_layers[name] = layer.weight
             weight_value = self.prev_layer_weights[name]*difference_change.squeeze(0).unsqueeze(1)
             newlayers[name]= weight_value
             weight_sum_change = torch.sum(weight_value).item()-torch.sum(self.prev_layer_weights[name]).item()
-            weight_value[weight_value!=0]+= weight_sum_change/amount
             layer.zero_grad()
             # layer.data = weight_value
         self.improve_image_attention()
@@ -169,13 +168,11 @@ class PunisherLoss(nn.Module):
         threshold = loss *1.1
         while loss<= threshold and loss <=prev_loss:
             self.adjust_model(True)
-            self.compute_saliency_map(self.input,self.label).show()
             self.train_on_image()
-            # self.adjust_model(False)
-            # loss = self.am_I_overfitting()
+            self.adjust_model(False)
+            self.compute_saliency_map(self.input,self.label).show()
             prev_loss = loss
             loss = self.am_I_overfitting().item()
-            self.compute_saliency_map(self.input,self.label).show()
         
     def invert_process_image(self,image_pil):
         image_np = np.array(image_pil)
@@ -234,12 +231,15 @@ class PunisherLoss(nn.Module):
         for layer, name in self.model.named_parameters(): 
             if prev_name not in self.prev_layer_weights.keys():
                 prev_name= name
-                continue
+                continue  
             if backwards:
+                self.original_layers[name]= (1-self.layer_factors)*self.prev_layer_weights[name]
                 setattr(self.model,prev_name,self.prev_layer_weights[name]*self.layer_factors[name])
             else:
-                setattr(self.model, name ,self.original_layers[name])
+                setattr(self.model,prev_name,self.original_layers[name]+layer)
             prev_name = name
+
+            
 
 
 
