@@ -122,6 +122,8 @@ class PunisherLoss(nn.Module):
  
 
     def backward(self):
+        print("type is ")
+
         print("called the backwards function")
         newlayers = {}
         if self.changed_activations=={}:
@@ -144,13 +146,17 @@ class PunisherLoss(nn.Module):
                 continue
             
 
+
             difference_change=abs(self.activations[name]-self.changed_activations[name])
+            print("type is")
+            print(type(difference_change))
             percentile = (self.marked_pixels_count*3)/self.input.numel()
             limit = torch.quantile(difference_change, percentile).item()
+            # limit = 0.01
             print("The limit in this case was "+str(limit))
             difference_change[(difference_change>limit)]=0
             difference_change[(difference_change > 0)] = 1
-            self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
+            # self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
             self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
             self.original_layers[name] = layer.weight
             weight_value = self.prev_layer_weights[name]*difference_change.squeeze(0).unsqueeze(1)
@@ -168,8 +174,11 @@ class PunisherLoss(nn.Module):
         threshold = loss *1.1
         while loss<= threshold and loss <=prev_loss:
             self.adjust_model(True)
-            self.train_on_image()
+            # self.train_on_image()
+            self.compute_saliency_map(self.input,self.label).show()
+
             self.adjust_model(False)
+
             self.compute_saliency_map(self.input,self.label).show()
             prev_loss = loss
             loss = self.am_I_overfitting().item()
@@ -226,20 +235,42 @@ class PunisherLoss(nn.Module):
 
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
-    def adjust_model(self,backwards):
-        prev_name = ""
-        for layer, name in self.model.named_parameters(): 
-            if prev_name not in self.prev_layer_weights.keys():
-                prev_name= name
-                continue  
-            if backwards:
-                self.original_layers[name]= (1-self.layer_factors)*self.prev_layer_weights[name]
-                setattr(self.model,prev_name,self.prev_layer_weights[name]*self.layer_factors[name])
-            else:
-                setattr(self.model,prev_name,self.original_layers[name]+layer)
-            prev_name = name
+    def adjust_model(self, backwards):
+        print("State is "+str(backwards))
+        print(len(list(self.model.named_parameters())))
+        if not hasattr(self, 'original_layers'):
+            self.original_layers = {}
+        
+        # Get the state_dict of the model
+        state_dict = self.model.state_dict()
+
+        for name, param in self.model.named_parameters():
+            if name not in self.prev_layer_weights.keys():
+                print(name)
+                print(self.named)
+                continue
+        
 
             
+            if backwards:
+                print("here it gets to")
+                # Save the current parameter tensor to restore later
+                self.original_layers[name] = param.clone()
+                
+                # Modify the parameter tensor
+                modified_param = self.prev_layer_weights[name] * self.layer_factors[name]
+                
+                # Update the state_dict directly
+                state_dict[name] = modified_param
+            else:
+                print("it gets to this point why the fuck does it not work!!!!")
+                # Restore the original parameter tensor
+                # state_dict[name] = self.original_layers[name]
+                zero_param = torch.zeros_like(param)
+                state_dict[name] = zero_param
+        
+        # Load the updated state_dict back into the model
+        self.model.load_state_dict(state_dict)
 
 
 
@@ -440,7 +471,7 @@ class PunisherLoss(nn.Module):
         self.gradients = input_data.grad.clone().detach()
 
 
-        # self.gradients[self.gradients < 0] = 0
+        self.gradients[self.gradients < 0] = 0
 
         # Compute the importance weights based on gradients
         importance_weights = torch.mean(self.gradients, dim=(1, 2, 3), keepdim=True)
