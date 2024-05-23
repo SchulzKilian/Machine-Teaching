@@ -93,6 +93,12 @@ class PunisherLoss(nn.Module):
 
     def item(self):
         return self.loss.item()
+    
+
+    def distribution(self,tensor):
+        plt.hist(tensor.numpy().flatten(), bins=50)
+        plt.show()
+
 
 
 
@@ -122,9 +128,9 @@ class PunisherLoss(nn.Module):
  
 
     def backward(self):
-        print("type is ")
 
-        print("called the backwards function")
+        # self.compute_saliency_map(self.input,self.label).show()
+
         newlayers = {}
         if self.changed_activations=={}:
             self.default_loss.zero_grad()
@@ -139,32 +145,44 @@ class PunisherLoss(nn.Module):
             weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)*1000
             anti_overfitting_constant = weight_value.mean()
             newlayers[item]= (weight_value-anti_overfitting_constant)
+        
             """
+        statesdict = {}
+        prev_layer = None
         for name, layer in self.model.named_children():
             if name not in self.activations.keys():
                 layer.zero_grad()
+                prev_layer = name + ".weight"
+                print(prev_layer)
                 continue
             
 
 
-            difference_change=abs(self.activations[name]-self.changed_activations[name])
-            print("type is")
-            print(type(difference_change))
+            difference_change=abs((self.activations[name]-self.changed_activations[name]).squeeze(0).unsqueeze(1)*self.prev_layer_weights[name])
             percentile = (self.marked_pixels_count*3)/self.input.numel()
             limit = torch.quantile(difference_change, percentile).item()
             # limit = 0.01
-            print("The limit in this case was "+str(limit))
+            # self.distribution(difference_change)
+            print("The limit in this case was "+str(limit)) 
             difference_change[(difference_change>limit)]=0
             difference_change[(difference_change > 0)] = 1
             # self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
-            self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
-            self.original_layers[name] = layer.weight
-            weight_value = self.prev_layer_weights[name]*difference_change.squeeze(0).unsqueeze(1)
-            newlayers[name]= weight_value
-            weight_sum_change = torch.sum(weight_value).item()-torch.sum(self.prev_layer_weights[name]).item()
+            # self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
+            # self.original_layers[name] = layer.weight
+            weight_value = self.prev_layer_weights[name]*difference_change
+            statesdict[prev_layer]= weight_value
+
+            # weight_sum_change = torch.sum(weight_value).item()-torch.sum(self.prev_layer_weights[name]).item()
             layer.zero_grad()
-            # layer.data = weight_value
+            prev_layer = name + ".weight"
+            print(prev_layer)
+        statesdict[prev_layer]= weight_value
+        self.model.load_state_dict(statesdict, strict= False)
+        print(statesdict.keys())
+        self.compute_saliency_map(self.input, self.label).show()
         self.improve_image_attention()
+
+
 
 
     def improve_image_attention(self):
@@ -173,13 +191,14 @@ class PunisherLoss(nn.Module):
         prev_loss = loss
         threshold = loss *1.1
         while loss<= threshold and loss <=prev_loss:
-            self.adjust_model(True)
+            # self.adjust_model(True)
             # self.train_on_image()
-            self.compute_saliency_map(self.input,self.label).show()
+            
 
-            self.adjust_model(False)
+            # self.adjust_model(False)
 
-            self.compute_saliency_map(self.input,self.label).show()
+            while True:
+                continue
             prev_loss = loss
             loss = self.am_I_overfitting().item()
         
@@ -244,10 +263,9 @@ class PunisherLoss(nn.Module):
         # Get the state_dict of the model
         state_dict = self.model.state_dict()
 
-        for name, param in self.model.named_parameters():
+        for name, param in self.model.named_children():
             if name not in self.prev_layer_weights.keys():
                 print(name)
-                print(self.named)
                 continue
         
 
@@ -255,7 +273,7 @@ class PunisherLoss(nn.Module):
             if backwards:
                 print("here it gets to")
                 # Save the current parameter tensor to restore later
-                self.original_layers[name] = param.clone()
+                self.original_layers[name] = param
                 
                 # Modify the parameter tensor
                 modified_param = self.prev_layer_weights[name] * self.layer_factors[name]
@@ -265,9 +283,8 @@ class PunisherLoss(nn.Module):
             else:
                 print("it gets to this point why the fuck does it not work!!!!")
                 # Restore the original parameter tensor
-                # state_dict[name] = self.original_layers[name]
-                zero_param = torch.zeros_like(param)
-                state_dict[name] = zero_param
+                state_dict[name] = self.original_layers[name]
+
         
         # Load the updated state_dict back into the model
         self.model.load_state_dict(state_dict)
@@ -284,6 +301,7 @@ class PunisherLoss(nn.Module):
         return hamming_distance
     
     def train_on_image(self):
+        print("WARNING")
         weight_loss = 0
         exploration_loss = 0
         for name, layer in self.model.named_parameters():
@@ -399,9 +417,9 @@ class PunisherLoss(nn.Module):
 
 
             def close_window():
+                newimage = image.clone()
 
                 self.marked_pixels_count = 0  # Counter for marked pixels
-
 
                 for x in range(height):
                     for y in range(width):
@@ -409,17 +427,18 @@ class PunisherLoss(nn.Module):
                         original_y = y * scaling_factor
                         if drawn_image.getpixel((original_y, original_x)) == (255, 0, 1) and saliency_map.getpixel((original_y, original_x))[3] > 0:
                             r,g,b = image[0,x,y].item(), image[1,x,y].item(),image[2,x,y].item()
-                            image[0,x,y],image[1,x,y], image[2,x,y]= r-1,g-1,b-1
-                            # Get the corresponding coordinates in the original image
-
+                            newimage[0,x,y],newimage[1,x,y], newimage[2,x,y]= r-1,g-1,b-1
 
                             self.marked_pixels_count += 1
-                self.process_image(image).resize((new_width,new_height))
-                newimage= image.squeeze(0)
 
+                
+                # self.process_image(newimage).resize((new_width,new_height)).show()
+    
+                newimage=newimage.unsqueeze(0)               
                 # drawn_image.show()
                 if self.marked_pixels_count !=0:
                     self.real = False
+                    print("for the changed image the size is "+str(newimage.size()))
                     output = self.model(newimage)
                     if self.last_layer_linear:
                         self.changed_activations["output"]=output
@@ -432,9 +451,7 @@ class PunisherLoss(nn.Module):
 
         close_button = tk.Button(window, text="Continue", command=close_window)
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
-
         root.mainloop()
-
         return self
     
 
@@ -453,6 +470,7 @@ class PunisherLoss(nn.Module):
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
         self.label = label
         # Forward pass
+        print("for the real image the size is "+str(input_data.size()))
         outputs = self.model(input_data) 
         if self.last_layer_linear:
             self.activations["output"]=outputs
