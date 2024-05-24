@@ -30,6 +30,7 @@ class PunisherLoss(nn.Module):
         self.format = None
         self.optimizer = optim.SGD(model.parameters(),0.001)
         self.val = None
+        self.marked_pixels = None
         self.real = True
         self.input = None
         self.mode = mode
@@ -128,7 +129,7 @@ class PunisherLoss(nn.Module):
  
 
     def backward(self):
-
+        old_parameters = self.model.parameters()
         # self.compute_saliency_map(self.input,self.label).show()
 
         newlayers = {}
@@ -147,9 +148,9 @@ class PunisherLoss(nn.Module):
             newlayers[item]= (weight_value-anti_overfitting_constant)
         
             """
-        statesdict = {}
+        statesdict = self.model.state_dict()
         prev_layer = None
-        for name, layer in self.model.named_children():
+        for name, layer in list(self.model.named_children())+[("output",None)]:
             if name not in self.activations.keys():
                 layer.zero_grad()
                 prev_layer = name + ".weight"
@@ -157,30 +158,65 @@ class PunisherLoss(nn.Module):
                 continue
             
 
-
+            # print(f"{name} has the shape {self.activations[name].shape} on the activations, {self.changed_activations[name].shape} on the changed activations as well as {self.prev_layer_weights[name].shape} for the weights")
             difference_change=abs((self.activations[name]-self.changed_activations[name]).squeeze(0).unsqueeze(1)*self.prev_layer_weights[name])
             percentile = (self.marked_pixels_count*3)/self.input.numel()
             limit = torch.quantile(difference_change, percentile).item()
             # limit = 0.01
             # self.distribution(difference_change)
-            print("The limit in this case was "+str(limit)) 
+            # print("The limit in this case was "+str(limit)) 
             difference_change[(difference_change>limit)]=0
             difference_change[(difference_change > 0)] = 1
+
+            num_zeros = torch.sum(difference_change == 0).item()
+
+            # Find the number of 1s
+            num_ones = torch.sum(difference_change == 1).item()
+
+            print(f"Number of 0s: {num_zeros}")
+            print(f"Number of 1s: {num_ones}")
             # self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
             # self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
-            # self.original_layers[name] = layer.weight
             weight_value = self.prev_layer_weights[name]*difference_change
-            statesdict[prev_layer]= weight_value
+            print(f"shape is {self.prev_layer_weights[name].shape} or {difference_change.shape}")
+            statesdict[prev_layer]= nn.Parameter(weight_value)
 
-            # weight_sum_change = torch.sum(weight_value).item()-torch.sum(self.prev_layer_weights[name]).item()
-            layer.zero_grad()
+            old_stuff =getattr(self.model, prev_layer.rstrip(".weight"))
+            # old_weights = setattr(old_stuff, "weight",nn.Parameter(weight_value))
+            # print(old_weights)
+
+            
+
+            # print(weight_value)
+
+
+            # assert old_weights is not weight_value
+            print(f"i am trying to change {prev_layer} by {num_zeros} zero entries")
+
+            try:
+                layer.zero_grad()
+            except:
+                pass
             prev_layer = name + ".weight"
-            print(prev_layer)
-        statesdict[prev_layer]= weight_value
-        self.model.load_state_dict(statesdict, strict= False)
-        print(statesdict.keys())
+        
+        
+        self.model.load_state_dict(statesdict)
+        new_parameters = self.model.parameters()
+        
+        print(f"The difference between the two models is {self.calculate_parameter_change(old_params=old_parameters,new_params=new_parameters)}")
+
+        # Check for missing and unexpected keys
+        """
+        if missing_keys:
+            print("Missing keys in state_dict:", missing_keys)
+        if unexpected_keys:
+            print("Unexpected keys in state_dict:", unexpected_keys)
+            """
+        self.model.zero_grad()
         self.compute_saliency_map(self.input, self.label).show()
-        self.improve_image_attention()
+        self.measure_impact()
+        # self.improve_image_attention()
+        self.marked_pixels = None
 
 
 
@@ -289,7 +325,12 @@ class PunisherLoss(nn.Module):
         # Load the updated state_dict back into the model
         self.model.load_state_dict(state_dict)
 
-
+    def calculate_parameter_change(self, old_params, new_params):
+        total_change = 0
+        for old_param, new_param in zip(old_params, new_params):
+            change = torch.sum(torch.abs(old_param - new_param)).item()
+            total_change += change
+        return total_change
 
     def image_difference(self,image1,image2):
         import imagehash
@@ -418,6 +459,7 @@ class PunisherLoss(nn.Module):
 
             def close_window():
                 newimage = image.clone()
+                self.marked_pixels = torch.zeros((1, height, width))
 
                 self.marked_pixels_count = 0  # Counter for marked pixels
 
@@ -428,7 +470,7 @@ class PunisherLoss(nn.Module):
                         if drawn_image.getpixel((original_y, original_x)) == (255, 0, 1) and saliency_map.getpixel((original_y, original_x))[3] > 0:
                             r,g,b = image[0,x,y].item(), image[1,x,y].item(),image[2,x,y].item()
                             newimage[0,x,y],newimage[1,x,y], newimage[2,x,y]= r-1,g-1,b-1
-
+                            self.marked_pixels[0,x,y] = 1
                             self.marked_pixels_count += 1
 
                 
@@ -438,13 +480,13 @@ class PunisherLoss(nn.Module):
                 # drawn_image.show()
                 if self.marked_pixels_count !=0:
                     self.real = False
-                    print("for the changed image the size is "+str(newimage.size()))
+                    # print("for the changed image the size is "+str(newimage.size()))
                     output = self.model(newimage)
                     if self.last_layer_linear:
                         self.changed_activations["output"]=output
                     self.real = True
-
-
+                self.marked_pixels.squeeze(0)
+                self.measure_impact()
                 root.destroy()
                 
 
@@ -454,7 +496,10 @@ class PunisherLoss(nn.Module):
         root.mainloop()
         return self
     
+    def measure_impact(self):
 
+        if self.marked_pixels != None:
+            print(f"The weights that contributed to the marked pixels now make up {str(torch.sum(self.marked_pixels*abs(self.gradients)).item()/torch.sum(abs(self.gradients)).item())}")
 
     # Function to handle forward pass hook
     def forward_hook(self, module, input, output,name):
@@ -470,7 +515,7 @@ class PunisherLoss(nn.Module):
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
         self.label = label
         # Forward pass
-        print("for the real image the size is "+str(input_data.size()))
+        # print("for the real image the size is "+str(input_data.size()))
         outputs = self.model(input_data) 
         if self.last_layer_linear:
             self.activations["output"]=outputs
@@ -488,8 +533,9 @@ class PunisherLoss(nn.Module):
 
         self.gradients = input_data.grad.clone().detach()
 
+        self.measure_impact()
 
-        self.gradients[self.gradients < 0] = 0
+        # self.gradients[self.gradients < 0] = 0
 
         # Compute the importance weights based on gradients
         importance_weights = torch.mean(self.gradients, dim=(1, 2, 3), keepdim=True)
