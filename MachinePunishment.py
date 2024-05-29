@@ -193,7 +193,7 @@ class PunisherLoss(nn.Module):
 
 
             # assert old_weights is not weight_value
-            print(f"i am trying to change {prev_layer} by {num_zeros} zero entries")
+            # print(f"i am trying to change {prev_layer} by {num_zeros} zero entries")
 
             try:
                 layer.zero_grad()
@@ -502,6 +502,8 @@ class PunisherLoss(nn.Module):
     def measure_impact(self):
 
         if self.marked_pixels != None:
+            print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
+            print(f"Sum of gradients is {torch.sum(self.gradients)}")
             print(f"The weights that contributed to the marked pixels now make up {str(torch.sum(self.marked_pixels*abs(self.gradients)).item()/torch.sum(abs(self.gradients)).item())}")
 
     # Function to handle forward pass hook
@@ -517,6 +519,9 @@ class PunisherLoss(nn.Module):
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
         self.label = label
+
+        if input_data.grad is not None:
+            input_data.grad.zero_()
         # Forward pass
         # print("for the real image the size is "+str(input_data.size()))
         outputs = self.model(input_data) 
