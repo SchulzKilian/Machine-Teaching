@@ -124,12 +124,14 @@ class PunisherLoss(nn.Module):
         radius = int(value)
         self.setradius(radius)
 
+    def get_model_params(self):
+        return {name: param.clone() for name, param in self.model.state_dict().items()}
     
 
  
 
     def backward(self):
-        old_parameters = self.model.parameters()
+        old_parameters = self.get_model_params()
         # self.compute_saliency_map(self.input,self.label).show()
 
         newlayers = {}
@@ -201,7 +203,7 @@ class PunisherLoss(nn.Module):
         
         
         self.model.load_state_dict(statesdict)
-        new_parameters = self.model.parameters()
+        new_parameters = self.get_model_params()
         
         print(f"The difference between the two models is {self.calculate_parameter_change(old_params=old_parameters,new_params=new_parameters)}")
 
@@ -327,7 +329,8 @@ class PunisherLoss(nn.Module):
 
     def calculate_parameter_change(self, old_params, new_params):
         total_change = 0
-        for old_param, new_param in zip(old_params, new_params):
+        for key in old_params.keys():
+            old_param, new_param = old_params[key],new_params[key]
             change = torch.sum(torch.abs(old_param - new_param)).item()
             total_change += change
         return total_change
