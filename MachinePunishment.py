@@ -1,11 +1,13 @@
 import torch
 import torch.nn as nn
+from torchvision import transforms
 from PIL import Image, ImageTk, ImageDraw
 import tkinter as tk
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
+import torch.autograd as autograd
 import enum
 class Mode(enum.Enum):
     NUKE = 'nuke'
@@ -128,9 +130,22 @@ class PunisherLoss(nn.Module):
         return {name: param.clone() for name, param in self.model.state_dict().items()}
     
 
- 
 
     def backward(self):
+        for name, param in self.model.named_parameters():        
+            assert self.gradients.requires_grad, "gradients dont require gradient"
+            assert param.requires_grad, f"{name} parameters dont require gradient"
+            assert self.gradients.grad_fn is not None, "gradients were not part of graph"
+            assert param.grad_fn is not None, f"{name} parameters were not part of graph"
+
+
+            second_order_grad = autograd.grad(outputs=self.gradients, inputs=param, grad_outputs=torch.ones_like(self.gradients), retain_graph=True, create_graph=True)
+            print(second_order_grad)
+
+
+
+
+    def old_backward(self):
         old_parameters = self.get_model_params()
         # self.compute_saliency_map(self.input,self.label).show()
 
@@ -151,6 +166,8 @@ class PunisherLoss(nn.Module):
         
             """
         statesdict = self.model.state_dict()
+        image = transforms.ToPILImage()(self.marked_pixels)
+        image.show()
         prev_layer = None
         for name, layer in list(self.model.named_children())+[("output",None)]:
             if name not in self.activations.keys():
@@ -160,30 +177,31 @@ class PunisherLoss(nn.Module):
                 continue
             
 
-            # print(f"{name} has the shape {self.activations[name].shape} on the activations, {self.changed_activations[name].shape} on the changed activations as well as {self.prev_layer_weights[name].shape} for the weights")
-            difference_change=abs((self.activations[name]-self.changed_activations[name]).squeeze(0).unsqueeze(1)*self.prev_layer_weights[name])
+            # print(f"{name} has the shape {self.activations[name]  .shape} on the activations, {self.changed_activations[name].shape} on the changed activations as well as {self.prev_layer_weights[name].shape} for the weights")
+            difference_change=abs((self.activations[name]-self.changed_activations[name]).squeeze(0).unsqueeze(1)*torch.ones_like(self.prev_layer_weights[name]))#self.prev_layer_weights[name])
             percentile = (self.marked_pixels_count*3)/self.input.numel()
+            print(f"percentile is {percentile}")
             limit = torch.quantile(difference_change, percentile).item()
             # limit = 0.01
             # self.distribution(difference_change)
             # print("The limit in this case was "+str(limit)) 
-            difference_change[(difference_change>limit)]=0
-            difference_change[(difference_change > 0)] = 1
+            difference_change[(difference_change>limit)]=0.0
+            difference_change[(difference_change > 0)] = 1.0
 
-            num_zeros = torch.sum(difference_change == 0).item()
+            num_zeros = torch.sum(difference_change == 0.0).item()
 
             # Find the number of 1s
-            num_ones = torch.sum(difference_change == 1).item()
+            num_ones = torch.sum(difference_change == 1.0).item()
 
             print(f"Number of 0s: {num_zeros}")
             print(f"Number of 1s: {num_ones}")
             # self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
             # self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
             weight_value = self.prev_layer_weights[name]*difference_change
-            print(f"shape is {self.prev_layer_weights[name].shape} or {difference_change.shape}")
+            # print(f"shape is {self.prev_layer_weights[name].shape} or {difference_change.shape}")
             statesdict[prev_layer]= nn.Parameter(weight_value)
 
-            old_stuff =getattr(self.model, prev_layer.rstrip(".weight"))
+            # old_stuff =getattr(self.model, prev_layer.rstrip(".weight"))
             # old_weights = setattr(old_stuff, "weight",nn.Parameter(weight_value))
             # print(old_weights)
 
@@ -216,7 +234,6 @@ class PunisherLoss(nn.Module):
             """
         self.model.zero_grad()
         self.compute_saliency_map(self.input, self.label).show()
-        self.measure_impact()
         # self.improve_image_attention()
         self.marked_pixels = None
 
@@ -263,7 +280,8 @@ class PunisherLoss(nn.Module):
         
     def process_image(self,image):
         
-        image_np = image.squeeze().detach().numpy()
+        image_np = image.squeeze().numpy()
+        # image_np = image.squeeze().detach().numpy()
 
 
         if len(image_np.shape) == 2:  # Grayscale image
@@ -504,8 +522,10 @@ class PunisherLoss(nn.Module):
         if self.marked_pixels != None:
             print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
             print(f"Sum of gradients is {torch.sum(self.gradients)}")
-            print(f"The weights that contributed to the marked pixels now make up {str(torch.sum(self.marked_pixels*abs(self.gradients)).item()/torch.sum(abs(self.gradients)).item())}")
-
+            try:
+                print(f"The weights that contributed to the marked pixels now make up {str(torch.sum(self.marked_pixels*abs(self.gradients)).item()/torch.sum(abs(self.gradients)).item())}")
+            except:
+                pass
     # Function to handle forward pass hook
     def forward_hook(self, module, input, output,name):
         # Store the output (activation) of the module
@@ -539,7 +559,12 @@ class PunisherLoss(nn.Module):
         
         # Get the gradients with respect to the input
 
-        self.gradients = input_data.grad.clone().detach()
+
+        self.gradients = input_data.grad.clone()# .detach()
+
+        assert self.gradients.grad_fn is not None, "gradients were not part of graph after cloning"
+
+        self.gradients.requires_grad = True
 
         self.measure_impact()
 
@@ -555,8 +580,11 @@ class PunisherLoss(nn.Module):
         normalized_input = weighted_input_data / weighted_input_data.max()
 
         # Convert to numpy array
-        saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
+        # saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
+        saliency_map_numpy = normalized_input.squeeze().cpu().clone().detach().numpy()
         
+        assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
+
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
             green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
