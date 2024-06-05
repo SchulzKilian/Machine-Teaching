@@ -53,6 +53,7 @@ class PunisherLoss(nn.Module):
         self.prev_layer_weights = self.get_previous_weights()
         # Define hooks
         def register_hooks(module,name):
+            return
             module.register_forward_hook(lambda module, input, output, name=name: self.forward_hook(module, input, output, name))
 
 
@@ -545,6 +546,7 @@ class PunisherLoss(nn.Module):
         # Forward pass
         # print("for the real image the size is "+str(input_data.size()))
         outputs = self.model(input_data) 
+        outputs.required_grad = True
         if self.last_layer_linear:
             self.activations["output"]=outputs
         self.input = input_data 
@@ -553,12 +555,14 @@ class PunisherLoss(nn.Module):
         target[0][label] = 1.0
         self.target = target
         self.loss = self.default_loss(outputs, target)
+        
 
         # Backpropagate to compute gradients with respect to the output
         self.loss.backward(retain_graph=True)
         
         # Get the gradients with respect to the input
 
+        assert input_data.grad.grad_fn is not None, "input data  were not part of graph"
 
         self.gradients = input_data.grad.clone()# .detach()
 
@@ -584,7 +588,7 @@ class PunisherLoss(nn.Module):
         saliency_map_numpy = normalized_input.squeeze().cpu().clone().detach().numpy()
         
         assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
-
+        
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
             green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
