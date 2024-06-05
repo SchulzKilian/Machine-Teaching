@@ -133,14 +133,25 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        for name, param in self.model.named_parameters():        
+        # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
+        self.model.zero_grad()
+        self.gradients.requires_grad_()
+        weight_gradients = torch.autograd.grad(self.gradients, self.model.parameters(), grad_outputs=torch.ones_like(self.gradients),  create_graph=True)
+
+
+
+
+        
+        for name, param in self.model.named_parameters(): 
+            print(param.grad)       
+            continue
             assert self.gradients.requires_grad, "gradients dont require gradient"
             assert param.requires_grad, f"{name} parameters dont require gradient"
             assert self.gradients.grad_fn is not None, "gradients were not part of graph"
             assert param.grad_fn is not None, f"{name} parameters were not part of graph"
 
 
-            second_order_grad = autograd.grad(outputs=self.gradients, inputs=param, grad_outputs=torch.ones_like(self.gradients), retain_graph=True, create_graph=True)
+
             print(second_order_grad)
 
 
@@ -543,13 +554,16 @@ class PunisherLoss(nn.Module):
 
         if input_data.grad is not None:
             input_data.grad.zero_()
+        
+        input_data_copy = input_data.clone()
+        # input_data_copy.requires_grad = True
+
         # Forward pass
-        # print("for the real image the size is "+str(input_data.size()))
-        outputs = self.model(input_data) 
+        outputs = self.model(input_data_copy) 
         outputs.required_grad = True
         if self.last_layer_linear:
             self.activations["output"]=outputs
-        self.input = input_data 
+        self.input = input_data
 
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
@@ -562,11 +576,11 @@ class PunisherLoss(nn.Module):
         
         # Get the gradients with respect to the input
 
-        assert input_data.grad.grad_fn is not None, "input data  were not part of graph"
+        # assert input_data_copy.grad_fn is not None, "input data  were not part of graph"
 
-        self.gradients = input_data.grad.clone()# .detach()
+        self.gradients = input_data.grad# .detach()
 
-        assert self.gradients.grad_fn is not None, "gradients were not part of graph after cloning"
+        # assert self.gradients.grad_fn is not None, "gradients were not part of graph after cloning"
 
         self.gradients.requires_grad = True
 
@@ -587,7 +601,7 @@ class PunisherLoss(nn.Module):
         # saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
         saliency_map_numpy = normalized_input.squeeze().cpu().clone().detach().numpy()
         
-        assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
+        # assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
         
         if len(saliency_map_numpy.shape) == 2:
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
