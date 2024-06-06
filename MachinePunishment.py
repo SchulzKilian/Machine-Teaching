@@ -138,7 +138,7 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, self.model)
+        hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, dict(self.model.named_parameters()))
         print(hessian)
         # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
         self.model.zero_grad()
@@ -555,7 +555,7 @@ class PunisherLoss(nn.Module):
 
     def modelfunction(self,x,target, model):
 
-        output = model.forward(x)
+        output = self.model.forward(x)
         loss = self.default_loss(output, target)
         return loss
         
@@ -588,7 +588,7 @@ class PunisherLoss(nn.Module):
 
         self.jacobian_func = func.jacrev(self.modelfunction) 
         
-        jacobian_x = self.jacobian_func(input_data, target, self.model)
+        jacobian_x = self.jacobian_func(input_data, target, dict(self.model.named_parameters()))
         
 
         # here i compute the jacobian to have a backpropagatable way to get input.grad
