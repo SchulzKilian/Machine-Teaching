@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
+import functorch as func
 
 import torch.autograd as autograd
 import enum
@@ -56,6 +57,9 @@ class PunisherLoss(nn.Module):
         def register_hooks(module,name):
             return
             module.register_forward_hook(lambda module, input, output, name=name: self.forward_hook(module, input, output, name))
+        
+
+        
 
 
         previous = False
@@ -134,6 +138,8 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
+        hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, self.model)
+        print(hessian)
         # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
         self.model.zero_grad()
         self.gradients.requires_grad_()
@@ -144,7 +150,7 @@ class PunisherLoss(nn.Module):
 
         
         for name, param in self.model.named_parameters(): 
-            print(param.grad)       
+               
             continue
             assert self.gradients.requires_grad, "gradients dont require gradient"
             assert param.requires_grad, f"{name} parameters dont require gradient"
@@ -520,7 +526,7 @@ class PunisherLoss(nn.Module):
                         self.changed_activations["output"]=output
                     self.real = True
                 self.marked_pixels.squeeze(0)
-                self.measure_impact()
+                # self.measure_impact()
                 root.destroy()
                 
 
@@ -547,13 +553,18 @@ class PunisherLoss(nn.Module):
         else:
             self.changed_activations[name] = output.clone().detach()
 
-    def modelfunction():
-        pass
+    def modelfunction(self,x,target, model):
 
+        output = model.forward(x)
+        loss = self.default_loss(output, target)
+        return loss
+        
     def compute_saliency_map(self, input_data, label):
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad = True  # Set requires_grad to True to compute gradients
         self.label = label
+
+        # state_dictionary = self.model.state_dict()
 
         if input_data.grad is not None:
             input_data.grad.zero_()
@@ -564,46 +575,64 @@ class PunisherLoss(nn.Module):
         # Forward pass
         outputs = self.model(input_data) 
         outputs.required_grad = True
-        if self.last_layer_linear:
-            self.activations["output"]=outputs
-        self.input = input_data
 
+        self.input = input_data
+        # functionalized_model = func.functionalize(self.modelfunction)
+        
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
         self.target = target
         self.loss = self.default_loss(outputs, target)
-        
-        # here i compute the jacobian to have a backpropagatable way to get input.grad
-        jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
+        # assert self.loss == functionalized_model(input_data, target)
+        assert torch.equal(outputs ,self.model.forward(input_data))
 
-        gradients = torch.matmul(jacobian, torch.ones_like(input_data))
+        self.jacobian_func = func.jacrev(self.modelfunction) 
+        
+        jacobian_x = self.jacobian_func(input_data, target, self.model)
+        
+
+        # here i compute the jacobian to have a backpropagatable way to get input.grad
+        # jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
+
+        # assert torch.allclose(jacobian,jacobian_x)
+
+        gradients = torch.matmul(jacobian_x, torch.ones_like(input_data))
 
         # Backpropagate to compute gradients with respect to the output
-        self.loss.backward(retain_graph=True)
+        # self.loss.backward(retain_graph=True)
 
-        
-        print(gradients)
         
         # Get the gradients with respect to the input
-
+        
         # assert input_data_copy.grad_fn is not None, "input data  were not part of graph"
 
-        self.gradients = input_data.grad# .detach()
+        # self.gradients = input_data.grad# .detach()
 
-        print(self.gradients)
 
-        assert torch.equal(self.gradients, gradients)
+        # assert self.gradients.shape == gradients.shape
+
+        """
+        diff = torch.abs(self.gradients - gradients)
+
+        # Compute the average difference
+        avg_diff = torch.mean(diff)
+
+        avg_val = (torch.mean(self.gradients)+torch.mean(gradients))/2
+
+        print(f"Average difference as percentage of actual values is {avg_diff/avg_val}")"""
+
+        # assert torch.equal(self.gradients, gradients)
 
         # assert self.gradients.grad_fn is not None, "gradients were not part of graph after cloning"
 
-        self.gradients.requires_grad = True
+        # self.gradients.requires_grad = True
 
-        self.measure_impact()
+        # self.measure_impact()
 
         # self.gradients[self.gradients < 0] = 0
 
         # Compute the importance weights based on gradients
-        importance_weights = torch.mean(self.gradients, dim=(1, 2, 3), keepdim=True)
+        importance_weights = torch.mean(gradients, dim=(1, 2, 3), keepdim=True)
 
         # Weighted input data
         weighted_input_data = F.relu(input_data * importance_weights)
