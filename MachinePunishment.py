@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
+
 import torch.autograd as autograd
 import enum
 class Mode(enum.Enum):
@@ -546,6 +547,8 @@ class PunisherLoss(nn.Module):
         else:
             self.changed_activations[name] = output.clone().detach()
 
+    def modelfunction():
+        pass
 
     def compute_saliency_map(self, input_data, label):
         self.model.eval()  # Set the model to evaluation mode
@@ -555,11 +558,11 @@ class PunisherLoss(nn.Module):
         if input_data.grad is not None:
             input_data.grad.zero_()
         
-        input_data_copy = input_data.clone()
+        # input_data_copy = input_data.clone()
         # input_data_copy.requires_grad = True
 
         # Forward pass
-        outputs = self.model(input_data_copy) 
+        outputs = self.model(input_data) 
         outputs.required_grad = True
         if self.last_layer_linear:
             self.activations["output"]=outputs
@@ -570,15 +573,26 @@ class PunisherLoss(nn.Module):
         self.target = target
         self.loss = self.default_loss(outputs, target)
         
+        # here i compute the jacobian to have a backpropagatable way to get input.grad
+        jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
+
+        gradients = torch.matmul(jacobian, torch.ones_like(input_data))
 
         # Backpropagate to compute gradients with respect to the output
         self.loss.backward(retain_graph=True)
+
+        
+        print(gradients)
         
         # Get the gradients with respect to the input
 
         # assert input_data_copy.grad_fn is not None, "input data  were not part of graph"
 
         self.gradients = input_data.grad# .detach()
+
+        print(self.gradients)
+
+        assert torch.equal(self.gradients, gradients)
 
         # assert self.gradients.grad_fn is not None, "gradients were not part of graph after cloning"
 
