@@ -140,6 +140,8 @@ class PunisherLoss(nn.Module):
     def backward(self):
         hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, dict(self.model.named_parameters()))
         print(hessian)
+        
+
         # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
         self.model.zero_grad()
         self.gradients.requires_grad_()
@@ -150,7 +152,7 @@ class PunisherLoss(nn.Module):
 
         
         for name, param in self.model.named_parameters(): 
-               
+            hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, (name,param))
             continue
             assert self.gradients.requires_grad, "gradients dont require gradient"
             assert param.requires_grad, f"{name} parameters dont require gradient"
@@ -553,9 +555,8 @@ class PunisherLoss(nn.Module):
         else:
             self.changed_activations[name] = output.clone().detach()
 
-    def modelfunction(self,x,target, model):
-
-        output = self.model.forward(x)
+    def modelfunction(self,params ,x,target):
+        output = self.fcall(params, x, target)
         loss = self.default_loss(output, target)
         return loss
         
@@ -575,6 +576,8 @@ class PunisherLoss(nn.Module):
         # Forward pass
         outputs = self.model(input_data) 
         outputs.required_grad = True
+        params = dict(self.model.named_parameters())
+        self.fcall = lambda params, x: func.functionalize(self.model, params, x)
 
         self.input = input_data
         # functionalized_model = func.functionalize(self.modelfunction)
@@ -588,7 +591,7 @@ class PunisherLoss(nn.Module):
 
         self.jacobian_func = func.jacrev(self.modelfunction) 
         
-        jacobian_x = self.jacobian_func(input_data, target, dict(self.model.named_parameters()))
+        jacobian_x = self.jacobian_func(input_data, target, None)
         
 
         # here i compute the jacobian to have a backpropagatable way to get input.grad
