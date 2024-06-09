@@ -72,3 +72,37 @@ class SimpleCNN(nn.Module):
                 running_loss += loss.item()
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')
         make_dot(loss, params=dict(model.named_parameters())).render("computation_graph", format="png")
+
+
+
+
+class SimplestCNN(nn.Module):
+    def __init__(self, classes, num_input_channels=3):
+        super(SimplestCNN, self).__init__()
+        self.num_input_channels = num_input_channels
+        self.num_classes = classes
+        self.conv1 = nn.Conv2d(num_input_channels, 8, kernel_size=3, stride=1, padding=1)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(8 * 16 * 16, 64)
+        self.fc2 = nn.Linear(64, classes)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = self.pool(x)
+        x = x.view(-1, 8 * 16 * 16)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+    def train_model(model, train_loader, criterion, optimizer, num_epochs):
+        model.train()
+        for epoch in range(num_epochs):
+            running_loss = 0.0
+            for i, (inputs, labels) in enumerate(train_loader):
+                optimizer.zero_grad()
+                outputs = model(inputs)
+                loss = criterion(outputs, labels,epoch)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')

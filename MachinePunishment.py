@@ -9,6 +9,7 @@ import numpy as np
 import torch.nn.functional as F
 import functorch as func
 from torch.func import functional_call
+from torch import vmap
 
 
 import torch.autograd as autograd
@@ -141,24 +142,29 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        hessian = func.jacrev(self.jacobian_func,  argnums = 1 )
+        hessian = func.jacrev(self.jacobian_func,  argnums = 0)
 
-    
+        # self.target.unsqueeze(0)
         
         
 
         # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
         self.model.zero_grad()
-        self.gradients.requires_grad_()
+        # self.gradients.requires_grad_()
         # weight_gradients = torch.autograd.grad(self.gradients, self.model.parameters(), grad_outputs=torch.ones_like(self.gradients),  create_graph=True)
 
 
-
+        hessian_per_sample = vmap(hessian, in_dims=(None,0,None))(dict(self.model.named_parameters()), self.input, self.target)
 
         
         for name, param in self.model.named_parameters(): 
-            hessian_matrix = hessian(self.input, self.target,self.model.named_parameters())
-            print(hessian_matrix)
+            print(f"input is {self.input.shape}")
+            print(f"input is {dict(self.model.named_parameters())[name].shape}")
+            print(f"parameter is {self.target.shape}")
+            
+            
+            # hessian_matrix = hessian(dict(self.model.named_parameters()), self.input, self.target)
+            # print(hessian_matrix)
             break
             continue
             assert self.gradients.requires_grad, "gradients dont require gradient"
@@ -564,6 +570,8 @@ class PunisherLoss(nn.Module):
 
     def modelfunction(self,params ,x,target):
         output = self.fcall(params, x)
+        print(f"the shape for the fcall output is {output.shape} the real shape is {self.model(x).shape}")
+
         loss = self.default_loss(output, target)
         return loss
         
@@ -593,7 +601,7 @@ class PunisherLoss(nn.Module):
         self.target = target
         self.loss = self.default_loss(outputs, target)
         # assert self.loss == functionalized_model(input_data, target)
-        assert torch.equal(outputs ,self.model.forward(input_data))
+        # assert torch.equal(outputs ,self.model.forward(input_data))
 
         self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
         
