@@ -8,6 +8,8 @@ import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
 import functorch as func
+from torch.func import functional_call
+
 
 import torch.autograd as autograd
 import enum
@@ -34,6 +36,7 @@ class PunisherLoss(nn.Module):
         self.format = None
         self.optimizer = optim.SGD(model.parameters(),0.001)
         self.val = None
+        self.fcall = lambda params, x: functional_call(self.model, params, x)
         self.marked_pixels = None
         self.real = True
         self.input = None
@@ -138,21 +141,25 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
-        hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, dict(self.model.named_parameters()))
-        print(hessian)
+        hessian = func.jacrev(self.jacobian_func,  argnums = 1 )
+
+    
+        
         
 
         # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
         self.model.zero_grad()
         self.gradients.requires_grad_()
-        weight_gradients = torch.autograd.grad(self.gradients, self.model.parameters(), grad_outputs=torch.ones_like(self.gradients),  create_graph=True)
+        # weight_gradients = torch.autograd.grad(self.gradients, self.model.parameters(), grad_outputs=torch.ones_like(self.gradients),  create_graph=True)
 
 
 
 
         
         for name, param in self.model.named_parameters(): 
-            hessian = func.jacrev(self.jacobian_func,  argnums = 2 )(self.input, self.target, (name,param))
+            hessian_matrix = hessian(self.input, self.target,self.model.named_parameters())
+            print(hessian_matrix)
+            break
             continue
             assert self.gradients.requires_grad, "gradients dont require gradient"
             assert param.requires_grad, f"{name} parameters dont require gradient"
@@ -556,7 +563,7 @@ class PunisherLoss(nn.Module):
             self.changed_activations[name] = output.clone().detach()
 
     def modelfunction(self,params ,x,target):
-        output = self.fcall(params, x, target)
+        output = self.fcall(params, x)
         loss = self.default_loss(output, target)
         return loss
         
@@ -577,7 +584,6 @@ class PunisherLoss(nn.Module):
         outputs = self.model(input_data) 
         outputs.required_grad = True
         params = dict(self.model.named_parameters())
-        self.fcall = lambda params, x: func.functionalize(self.model, params, x)
 
         self.input = input_data
         # functionalized_model = func.functionalize(self.modelfunction)
@@ -589,9 +595,9 @@ class PunisherLoss(nn.Module):
         # assert self.loss == functionalized_model(input_data, target)
         assert torch.equal(outputs ,self.model.forward(input_data))
 
-        self.jacobian_func = func.jacrev(self.modelfunction) 
+        self.jacobian_func = func.jacrev(self.modelfunction, argnums = 2) 
         
-        jacobian_x = self.jacobian_func(input_data, target, None)
+        jacobian_x = self.jacobian_func(input_data, target, params)
         
 
         # here i compute the jacobian to have a backpropagatable way to get input.grad
