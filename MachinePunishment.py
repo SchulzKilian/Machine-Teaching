@@ -595,9 +595,9 @@ class PunisherLoss(nn.Module):
         # assert self.loss == functionalized_model(input_data, target)
         assert torch.equal(outputs ,self.model.forward(input_data))
 
-        self.jacobian_func = func.jacrev(self.modelfunction, argnums = 2) 
+        self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
         
-        jacobian_x = self.jacobian_func(input_data, target, params)
+        jacobian_x = self.jacobian_func(params,input_data, target)
         
 
         # here i compute the jacobian to have a backpropagatable way to get input.grad
