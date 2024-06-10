@@ -77,7 +77,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 
 # Train each model
-models = [SimplestCNN(classes,channels), ]
+models = [SimpleCNN(classes,channels), ]
 for model in models:
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
     criterion = PunisherLoss(1,train_dataset,model)

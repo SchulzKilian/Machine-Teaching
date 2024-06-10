@@ -142,6 +142,9 @@ class PunisherLoss(nn.Module):
 
 
     def backward(self):
+        total_params = sum(p.numel() for p in self.model.parameters())
+        print(f'Total parameters: {total_params}')
+
         hessian = func.jacrev(self.jacobian_func,  argnums = 0)
 
         # self.target.unsqueeze(0)
