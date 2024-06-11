@@ -120,7 +120,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0 or True:
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
@@ -552,7 +552,8 @@ class PunisherLoss(nn.Module):
         close_button = tk.Button(window, text="Continue", command=close_window)
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
         root.mainloop()
-        return self
+        # return self.loss + 10000*torch.sum(abs(self.gradients)* self.marked_pixels)
+        return torch.sum(abs(self.gradients)* self.marked_pixels)
     
     def measure_impact(self):
 
@@ -652,6 +653,9 @@ class PunisherLoss(nn.Module):
         # self.gradients[self.gradients < 0] = 0
 
         # Compute the importance weights based on gradients
+
+        self.gradients = gradients 
+
         importance_weights = torch.mean(gradients, dim=(1, 2, 3), keepdim=True)
 
         # Weighted input data
@@ -667,18 +671,28 @@ class PunisherLoss(nn.Module):
         # assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
         
         if len(saliency_map_numpy.shape) == 2:
+
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
-            green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.clip(saliency_map_numpy, 0, 1)
+            green_intensity = (safe_saliency_map * 255).astype(np.uint8)
             alpha_channel = np.full_like(green_intensity, 128)
             # Set alpha channel to 0 where green intensity is zero
             alpha_channel[green_intensity == 0] = 0
-            # Assign green intensity and alpha channel values to RGBA image
-            green_intensity = (saliency_map_numpy * 255).astype(np.uint8)
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
         elif len(saliency_map_numpy.shape) == 3:
-            saliency_map_rgba = np.zeros((saliency_map_numpy.shape[1], saliency_map_numpy.shape[2], 4), dtype=np.uint8)
-            green_intensity = (saliency_map_numpy[1] * 255).astype(np.uint8)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
+
+            # Clip values to the expected range (0 to 1)
+            safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
+
+            # Create RGBA array with shape (height, width, 4)
+            saliency_map_rgba = np.zeros((safe_saliency_map.shape[1], safe_saliency_map.shape[2], 4), dtype=np.uint8)
+            
+            # Calculate green intensity from the second channel of the saliency map
+            green_intensity = (safe_saliency_map[1] * 255).astype(np.uint8)
+
             alpha_channel = np.full_like(green_intensity, 128)
 
             # Set alpha channel to 0 where green intensity is zero
