@@ -120,7 +120,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0 or True:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
