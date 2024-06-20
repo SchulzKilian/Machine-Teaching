@@ -231,9 +231,11 @@ class PunisherLoss(nn.Module):
         self.zero_weights_with_non_zero_gradients()
         validation2 = self.am_I_overfitting().item()
         saliency2 = self.compute_saliency_map(self.input,self.label)
-        image_window = ChoserWindow(self.saliency, "Text for Image 1", saliency2, f"Modified Model, accuracy {validation2}")
-        image_window.run()
-        self.show_gradients()
+        image_window = ChoserWindow(self.saliency, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
+        update = image_window.run()
+        if not update:
+            self.model.load_state_dict(old_model)
+        # self.show_gradients()
         
 
     def explicit_backward(self):
@@ -673,7 +675,7 @@ class PunisherLoss(nn.Module):
 
     def modelfunction(self,params ,x,target):
         output = self.fcall(params, x)
-        print(f"the shape for the fcall output is {output.shape} the real shape is {self.model(x).shape}")
+        # print(f"the shape for the fcall output is {output.shape} the real shape is {self.model(x).shape}")
 
         loss = self.default_loss(output, target)
         return loss
@@ -814,49 +816,72 @@ class PunisherLoss(nn.Module):
                 final_conv_layer = module
                 break  # Stop iteration after finding the first convolutional layer
         return final_conv_layer
-    
-
-
 
 
 class ChoserWindow:
     def __init__(self, image1, image1_text, image2, image2_text):
         self.root = tk.Tk()
         self.root.title("Image Window")
-        self.root.geometry("800x900")  # Set the window size
+        self.root.geometry("1600x900")  # Set the window size to accommodate two images side by side
 
-        # Store images and their texts
         self.image1 = image1
         self.image1_text = image1_text
         self.image2 = image2
         self.image2_text = image2_text
         
-        # Create canvas to display images
-        self.canvas = tk.Canvas(self.root, bg="white", width=800, height=800)
-        self.canvas.pack()
+        self.blended_image_tk1 = None
+        self.blended_image_tk2 = None
+        
+        self.selection = None
+        
+        self.frame = tk.Frame(self.root)
+        self.frame.pack(fill=tk.BOTH, expand=True)
 
-        # Create a label for image text
-        self.label = tk.Label(self.root, text="", font=("Helvetica", 16))
-        self.label.pack()
+        self.canvas1 = tk.Canvas(self.frame, bg="white")
+        self.canvas1.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        # Display the first image initially
-        self.display_image(self.image1, self.image1_text)
+        self.canvas2 = tk.Canvas(self.frame, bg="white")
+        self.canvas2.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
 
-        # Bind mouse click to image display
-        self.canvas.bind("<Button-1>", self.on_image_click)
+        self.label1 = tk.Label(self.root, text=self.image1_text, font=("Helvetica", 16))
+        self.label1.pack(side=tk.LEFT, padx=10, pady=10)
 
-    def display_image(self, image, text):
-        self.canvas.delete("all")  # Clear the canvas
-        self.tk_image = ImageTk.PhotoImage(image.resize((800, 800)))  # Resize and convert image for Tkinter
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
-        self.label.config(text=text)  # Update label with the image text
+        self.label2 = tk.Label(self.root, text=self.image2_text, font=("Helvetica", 16))
+        self.label2.pack(side=tk.LEFT, padx=10, pady=10)
 
-    def on_image_click(self, event):
-        # Toggle between image1 and image2
-        if self.label.cget("text") == self.image1_text:
-            self.display_image(self.image2, self.image2_text)
-        else:
-            self.display_image(self.image1, self.image1_text)
+        self.root.update_idletasks()
+        self.display_images()
+
+        self.canvas1.bind("<Button-1>", lambda event: self.on_image_click(False))
+        self.canvas2.bind("<Button-1>", lambda event: self.on_image_click(True))
+
+    def display_images(self):
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+
+        # Example: assuming blended_image1 and blended_image2 are Image objects
+        blended_image1 = self.blend_images(self.image1)
+        blended_image2 = self.blend_images(self.image2)
+
+        self.blended_image_tk1 = ImageTk.PhotoImage(blended_image1.resize((width // 2, height)))
+        self.blended_image_tk2 = ImageTk.PhotoImage(blended_image2.resize((width // 2, height)))
+
+        self.display_image(self.blended_image_tk1, self.canvas1)
+        self.display_image(self.blended_image_tk2, self.canvas2)
+
+    def blend_images(self, image):
+        # Example function to blend an image (replace with your own logic)
+        return image
+
+    def display_image(self, image_tk, canvas):
+        canvas.delete("all")
+        canvas.create_image(0, 0, anchor=tk.NW, image=image_tk)
+
+    def on_image_click(self, selection):
+        self.selection = selection
+        self.root.quit()
+        self.root.destroy()  # Ensure the window is destroyed after quitting the main loop
 
     def run(self):
         self.root.mainloop()
+        return self.selection
