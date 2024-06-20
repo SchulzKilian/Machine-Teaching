@@ -37,6 +37,7 @@ class PunisherLoss(nn.Module):
         self.format = None
         self.optimizer = optim.SGD(model.parameters(),0.001)
         self.val = None
+        self.frozen_layers = []
         self.fcall = lambda params, x: functional_call(self.model, params, x)
         self.marked_pixels = None
         self.real = True
@@ -155,10 +156,52 @@ class PunisherLoss(nn.Module):
     def get_model_params(self):
         return {name: param.clone() for name, param in self.model.state_dict().items()}
     
+    def freeze_layers(self,layers=None, instance=None):
+
+        if layers is not None:
+            for layer in layers:
+                layer_obj = getattr(self.model,layer)
+                layer_obj.requires_grad = False
+                self.frozen_layers.append(layer)
+        
+        if instance is not None:
+            for name, layer in self.model.named_children():
+                if isinstance(layer, instance):
+                    layer.requires_grad = False
+                    self.frozen_layers.append(name)
+
+
+    def unfreeze_layers(self, specific_layers=None, instance=None):
+        if specific_layers is None:
+            for layer_name in self.frozen_layers:
+                layer_obj = getattr(self.model, layer_name)
+                layer_obj.requires_grad = True
+            self.frozen_layers = []
+        
+        elif instance is not None:
+            for name, layer in self.model.named_children():
+                if isinstance(layer, instance):
+                    layer.requires_grad = True
+                    self.frozen_layers.remove(name)
+
+        elif specific_layers is not None:
+            for layer_name in specific_layers:
+                layer_obj = getattr(self.model, layer_name)
+                layer_obj.requires_grad = True
+                self.frozen_layers.remove(name)
+
+
+
+
+
+
     
 
+
+
+
     def backward(self):
-        loss = (torch.sum((self.gradients)* self.marked_pixels)) + self.loss
+        loss = (torch.sum((self.gradients)* self.marked_pixels))# + self.loss
         self.loss.backward()
         self.show_gradients()
 
