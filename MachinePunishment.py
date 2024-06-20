@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import torch.func as func
 from torch.func import functional_call
 import random
-from Choser import ChoserWindow
+
 from torch import vmap
 
 
@@ -42,6 +42,7 @@ class PunisherLoss(nn.Module):
         self.fcall = lambda params, x: functional_call(self.model, params, x)
         self.marked_pixels = None
         self.real = True
+        self.saliency = None
         self.input = None
         self.mode = mode
         self.validation_set = self.create_validation_set(training_dataset,100)
@@ -122,7 +123,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0 or True:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
@@ -230,8 +231,8 @@ class PunisherLoss(nn.Module):
         self.zero_weights_with_non_zero_gradients()
         validation2 = self.am_I_overfitting().item()
         saliency2 = self.compute_saliency_map(self.input,self.label)
-        image_window = ImageWindow(image1, "Text for Image 1", saliency2, f"Modified Model, accuracy {validation2}")
-        saliency2.show()
+        image_window = ChoserWindow(self.saliency, "Text for Image 1", saliency2, f"Modified Model, accuracy {validation2}")
+        image_window.run()
         self.show_gradients()
         
 
@@ -546,8 +547,8 @@ class PunisherLoss(nn.Module):
             image_pil = self.process_image(image)
 
 
-            saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
-            saliency_map.show()
+            self.saliency = self.compute_saliency_map(image.unsqueeze(0), label)
+            self.saliency.show()
 
             # Convert the PIL Image to a Tkinter-compatible format
             width, height = image_pil.size
@@ -558,7 +559,7 @@ class PunisherLoss(nn.Module):
             new_width = width * scaling_factor
             new_height = height * scaling_factor
 
-            saliency_map = saliency_map.resize((new_width,new_height))
+            saliency_map = self.saliency.resize((new_width,new_height))
 
             image_pil = image_pil.resize((new_width, new_height))
 
@@ -813,3 +814,49 @@ class PunisherLoss(nn.Module):
                 final_conv_layer = module
                 break  # Stop iteration after finding the first convolutional layer
         return final_conv_layer
+    
+
+
+
+
+class ChoserWindow:
+    def __init__(self, image1, image1_text, image2, image2_text):
+        self.root = tk.Tk()
+        self.root.title("Image Window")
+        self.root.geometry("800x900")  # Set the window size
+
+        # Store images and their texts
+        self.image1 = image1
+        self.image1_text = image1_text
+        self.image2 = image2
+        self.image2_text = image2_text
+        
+        # Create canvas to display images
+        self.canvas = tk.Canvas(self.root, bg="white", width=800, height=800)
+        self.canvas.pack()
+
+        # Create a label for image text
+        self.label = tk.Label(self.root, text="", font=("Helvetica", 16))
+        self.label.pack()
+
+        # Display the first image initially
+        self.display_image(self.image1, self.image1_text)
+
+        # Bind mouse click to image display
+        self.canvas.bind("<Button-1>", self.on_image_click)
+
+    def display_image(self, image, text):
+        self.canvas.delete("all")  # Clear the canvas
+        self.tk_image = ImageTk.PhotoImage(image.resize((800, 800)))  # Resize and convert image for Tkinter
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
+        self.label.config(text=text)  # Update label with the image text
+
+    def on_image_click(self, event):
+        # Toggle between image1 and image2
+        if self.label.cget("text") == self.image1_text:
+            self.display_image(self.image2, self.image2_text)
+        else:
+            self.display_image(self.image1, self.image1_text)
+
+    def run(self):
+        self.root.mainloop()
