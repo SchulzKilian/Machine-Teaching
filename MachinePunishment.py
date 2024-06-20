@@ -9,6 +9,7 @@ import numpy as np
 import torch.nn.functional as F
 import torch.func as func
 from torch.func import functional_call
+import random
 from torch import vmap
 
 
@@ -36,7 +37,6 @@ class PunisherLoss(nn.Module):
         self.loss = None
         self.format = None
         self.optimizer = optim.SGD(model.parameters(),0.001)
-        self.val = None
         self.frozen_layers = []
         self.fcall = lambda params, x: functional_call(self.model, params, x)
         self.marked_pixels = None
@@ -138,19 +138,28 @@ class PunisherLoss(nn.Module):
         self.setradius(radius)
 
     def show_gradients(self):
+        sample_size = 1000
         all_gradients = []
 
         for param in self.model.parameters():
             if param.grad is not None:
                 all_gradients.extend(param.grad.view(-1).tolist())
+        print("Ich hab so viele nullen:")
+        
+        print(len([i for i in all_gradients if i == 0.0]))
+        print("und soviele nicht nullen")
+        print(len([i for i in all_gradients if i != 0.0]))
+        if len(all_gradients) > sample_size:
+            pass
+            all_gradients = random.sample(all_gradients, sample_size)
+        # Plotting the gradients
+        plt.figure(figsize=(10, 6))
 
-                # Plotting the gradients
-                plt.figure(figsize=(10, 6))
-                plt.scatter(range(len(all_gradients)), all_gradients, alpha=0.6, edgecolors='w', s=40)
-                plt.title('Scatter Plot of Gradients')
-                plt.ylabel('Gradient Value')
-                plt.grid(True)
-                plt.show()
+        plt.scatter(range(len(all_gradients)), all_gradients, alpha=0.6, edgecolors='w', s=40)
+        plt.title('Scatter Plot of Gradients')
+        plt.ylabel('Gradient Value')
+        plt.grid(True)
+        plt.show()
 
 
     def get_model_params(self):
@@ -197,12 +206,17 @@ class PunisherLoss(nn.Module):
 
     
 
-
+    def zero_weights_with_non_zero_gradients(self, instance_type= None):
+        for param in self.model.parameters():
+            if param.grad is not None and (isinstance(param, instance_type) or instance_type == None):
+                param.data[param.grad != 0] = 0
 
 
     def backward(self):
-        loss = (torch.sum((self.gradients)* self.marked_pixels))# + self.loss
-        self.loss.backward()
+        loss = (torch.sum((self.gradients)* self.marked_pixels)) #  + self.loss
+
+        loss.backward()
+        self.zero_weights_with_non_zero_gradients()
         self.show_gradients()
 
     def explicit_backward(self):
@@ -617,8 +631,9 @@ class PunisherLoss(nn.Module):
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
         root.mainloop()
         print(f"Loss is {self.loss.item()} and my added loss is {torch.sum(nn.Sigmoid()(self.gradients)* self.marked_pixels)/torch.sum(self.marked_pixels)}")
+        # return self.loss
         return self
-        return (torch.sum((self.gradients)* self.marked_pixels)) + self.loss
+        # return (torch.sum((self.gradients)* self.marked_pixels))/50 + self.loss
         # return torch.sum(abs(self.gradients)* self.marked_pixels)
     
     def measure_impact(self):
