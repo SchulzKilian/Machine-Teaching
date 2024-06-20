@@ -230,6 +230,7 @@ class PunisherLoss(nn.Module):
         self.zero_weights_with_non_zero_gradients()
         validation2 = self.am_I_overfitting().item()
         saliency2 = self.compute_saliency_map(self.input,self.label)
+        image_window = ImageWindow(image1, "Text for Image 1", saliency2, f"Modified Model, accuracy {validation2}")
         saliency2.show()
         self.show_gradients()
         
@@ -363,7 +364,8 @@ class PunisherLoss(nn.Module):
             print("Unexpected keys in state_dict:", unexpected_keys)
             """
         self.model.zero_grad()
-        self.compute_saliency_map(self.input, self.label).show()
+        self.saliency = self.compute_saliency_map(self.input, self.label)
+        self.saliency.show()
         # self.improve_image_attention()
         self.marked_pixels = None
 
