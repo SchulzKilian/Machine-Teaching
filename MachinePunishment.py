@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import torch.func as func
 from torch.func import functional_call
 import random
+from Choser import ChoserWindow
 from torch import vmap
 
 
@@ -223,10 +224,13 @@ class PunisherLoss(nn.Module):
 
     def backward(self):
         loss = (torch.sum((self.gradients)* self.marked_pixels)) #  + self.loss
-
+        validation1 = self.am_I_overfitting().item()
         loss.backward()
+        old_model = self.model.state_dict()
         self.zero_weights_with_non_zero_gradients()
-        self.compute_saliency_map(self.input,self.label).show()
+        validation2 = self.am_I_overfitting().item()
+        saliency2 = self.compute_saliency_map(self.input,self.label)
+        saliency2.show()
         self.show_gradients()
         
 
