@@ -208,8 +208,17 @@ class PunisherLoss(nn.Module):
 
     def zero_weights_with_non_zero_gradients(self, instance_type= None):
         for param in self.model.parameters():
-            if param.grad is not None and (isinstance(param, instance_type) or instance_type == None):
-                param.data[param.grad != 0] = 0
+            percentile = 1-  (self.marked_pixels_count*3)/self.input.numel()
+            print(f"percentile is {percentile}")
+            if param.grad is not None:
+                limit = torch.quantile(abs(param.grad), percentile).item()
+                print(f"limit is {limit}")
+            if param.grad is not None and instance_type is None:
+                param.data[abs(param.grad) > limit] = 0
+                print(f"Amount of zeros before is {param.data.numel()} amount removed is {param.data[abs(param.grad) > limit].numel()}")
+            elif param.grad is not None and isinstance(param, instance_type):
+                param.data[abs(param.grad) > limit] = 0
+
 
 
     def backward(self):
@@ -217,7 +226,9 @@ class PunisherLoss(nn.Module):
 
         loss.backward()
         self.zero_weights_with_non_zero_gradients()
+        self.compute_saliency_map(self.input,self.label).show()
         self.show_gradients()
+        
 
     def explicit_backward(self):
         total_params = sum(p.numel() for p in self.model.parameters())
