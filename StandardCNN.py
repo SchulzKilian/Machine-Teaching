@@ -67,7 +67,7 @@ class SimpleCNN(nn.Module):
                 loss = criterion(outputs, labels,epoch)
                 print("loss function done")
                 loss.backward()
-                criterion.compute_saliency_map
+
                 print("backward function done")
                 optimizer.step()
                 running_loss += loss.item()

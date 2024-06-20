@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
-import functorch as func
+import torch.func as func
 from torch.func import functional_call
 from torch import vmap
 
@@ -120,7 +120,7 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
+        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0 or True:
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
@@ -136,12 +136,33 @@ class PunisherLoss(nn.Module):
         radius = int(value)
         self.setradius(radius)
 
+    def show_gradients(self):
+        all_gradients = []
+
+        for param in self.model.parameters():
+            if param.grad is not None:
+                all_gradients.extend(param.grad.view(-1).tolist())
+
+                # Plotting the gradients
+                plt.figure(figsize=(10, 6))
+                plt.scatter(range(len(all_gradients)), all_gradients, alpha=0.6, edgecolors='w', s=40)
+                plt.title('Scatter Plot of Gradients')
+                plt.ylabel('Gradient Value')
+                plt.grid(True)
+                plt.show()
+
+
     def get_model_params(self):
         return {name: param.clone() for name, param in self.model.state_dict().items()}
     
-
+    
 
     def backward(self):
+        loss = (torch.sum((self.gradients)* self.marked_pixels)) + self.loss
+        self.loss.backward()
+        self.show_gradients()
+
+    def explicit_backward(self):
         total_params = sum(p.numel() for p in self.model.parameters())
         print(f'Total parameters: {total_params}')
 
@@ -552,8 +573,10 @@ class PunisherLoss(nn.Module):
         close_button = tk.Button(window, text="Continue", command=close_window)
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
         root.mainloop()
-        # return self.loss + 10000*torch.sum(abs(self.gradients)* self.marked_pixels)
-        return torch.sum(abs(self.gradients)* self.marked_pixels)
+        print(f"Loss is {self.loss.item()} and my added loss is {torch.sum(nn.Sigmoid()(self.gradients)* self.marked_pixels)/torch.sum(self.marked_pixels)}")
+        return self
+        return (torch.sum((self.gradients)* self.marked_pixels)) + self.loss
+        # return torch.sum(abs(self.gradients)* self.marked_pixels)
     
     def measure_impact(self):
 
