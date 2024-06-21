@@ -28,9 +28,24 @@ class ResNet50(nn.Module):
             for i, (inputs, labels) in enumerate(train_loader):
                 optimizer.zero_grad()
                 outputs = model(inputs)
+                try:
+                    assert not torch.any(torch.isnan(outputs)), "Model output contains NaN values."
+                except:
+                    print("The new loop fucked it up")
+                    exit()
                 loss = criterion(outputs, labels,epoch)
                 loss.backward()
+                try:
+                    assert not torch.any(torch.isnan(model(inputs))), "Model output contains only NaN values."
+                except:
+                    print("The backward fucked it up")
+                    exit()
                 optimizer.step()
+                try:
+                    assert not torch.any(torch.isnan(model(inputs))), "Model output contains only NaN values."
+                except:
+                    print("The optimizer fucked it up")
+                    exit()
                 running_loss += loss.item()
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')
 
@@ -62,13 +77,11 @@ class SimpleCNN(nn.Module):
         for epoch in range(num_epochs):
             running_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader):
+                model.train()
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 loss = criterion(outputs, labels,epoch)
-                print("loss function done")
                 loss.backward()
-
-                print("backward function done")
                 optimizer.step()
                 running_loss += loss.item()
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')
@@ -102,6 +115,7 @@ class SimplestCNN(nn.Module):
             for i, (inputs, labels) in enumerate(train_loader):
                 optimizer.zero_grad()
                 outputs = model(inputs)
+                print(outputs)
                 loss = criterion(outputs, labels,epoch)
                 loss.backward()
                 optimizer.step()

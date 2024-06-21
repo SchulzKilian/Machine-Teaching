@@ -1,5 +1,9 @@
 
-class ImageWindow:
+import tkinter as tk
+from PIL import Image, ImageTk
+
+print("Importing ChoserWindow")
+class ChoserWindow:
     def __init__(self, image1, image1_text, image2, image2_text):
         self.root = tk.Tk()
         self.root.title("Image Window")

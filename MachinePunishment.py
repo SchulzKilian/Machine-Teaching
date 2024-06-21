@@ -123,7 +123,8 @@ class PunisherLoss(nn.Module):
 
     def forward(self, inputs, targets, epoch):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs and epoch != 0:
+        if epoch%self.threshold==0 and epoch not in self.epochs:
+
             #return self.default_loss(inputs, targets)
             print("custom")
             self.epochs.append(epoch)
@@ -210,31 +211,50 @@ class PunisherLoss(nn.Module):
 
     def zero_weights_with_non_zero_gradients(self, instance_type= None):
         for param in self.model.parameters():
+            if torch.isnan(param.grad).any():
+                print("Gradient contains NaN values.")
+                continue  # Skip this parameter
+            sum1 =torch.sum(param.data)
             percentile = 1-  (self.marked_pixels_count*3)/self.input.numel()
-            print(f"percentile is {percentile}")
+            # print(f"percentile is {percentile}")
             if param.grad is not None:
                 limit = torch.quantile(abs(param.grad), percentile).item()
-                print(f"limit is {limit}")
+                # print(f"limit is {limit}")
             if param.grad is not None and instance_type is None:
                 param.data[abs(param.grad) > limit] = 0
-                print(f"Amount of zeros before is {param.data.numel()} amount removed is {param.data[abs(param.grad) > limit].numel()}")
+                param.data[abs(param.grad) <= limit]# *= 1/(1-percentile)
+                # print(f"Amount of zeros before is {param.data.numel()} amount removed is {param.data[abs(param.grad) > limit].numel()}")
             elif param.grad is not None and isinstance(param, instance_type):
                 param.data[abs(param.grad) > limit] = 0
+                param.data[abs(param.grad) <= limit]# *= 1/(1-percentile)
+            sum2 =torch.sum(param.data)
+            print(f"We went from {sum1} to {sum2}")
+            param.requires_grad_()
 
 
 
     def backward(self):
+
         loss = (torch.sum((self.gradients)* self.marked_pixels)) #  + self.loss
         validation1 = self.am_I_overfitting().item()
         loss.backward()
         old_model = self.model.state_dict()
+        self.measure_impact()
         self.zero_weights_with_non_zero_gradients()
         validation2 = self.am_I_overfitting().item()
+        for param in self.model.parameters():
+            if param.grad is not None:
+                param.grad.zero_()
         saliency2 = self.compute_saliency_map(self.input,self.label)
+        self.measure_impact()
         image_window = ChoserWindow(self.saliency, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
         update = image_window.run()
         if not update:
             self.model.load_state_dict(old_model)
+        for param in self.model.parameters():
+            if param.grad is not None:
+                param.grad.zero_()
+
         # self.show_gradients()
         
 
@@ -518,9 +538,11 @@ class PunisherLoss(nn.Module):
 
 
     def am_I_overfitting(self):
+        self.model.eval()
         outputs = self.model(self.validation_set[0])
         loss = self.default_loss(outputs,self.validation_set[1])
         print("the current loss is "+str(loss.item()))
+        self.model.train()
         return loss
 
 
@@ -659,8 +681,8 @@ class PunisherLoss(nn.Module):
     def measure_impact(self):
 
         if self.marked_pixels != None:
-            print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
-            print(f"Sum of gradients is {torch.sum(self.gradients)}")
+            # print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
+            # print(f"Sum of gradients is {torch.sum(self.gradients)}")
             try:
                 print(f"The weights that contributed to the marked pixels now make up {str(torch.sum(self.marked_pixels*abs(self.gradients)).item()/torch.sum(abs(self.gradients)).item())}")
             except:
@@ -681,9 +703,16 @@ class PunisherLoss(nn.Module):
         return loss
         
     def compute_saliency_map(self, input_data, label):
+
         self.model.eval()  # Set the model to evaluation mode
-        input_data.requires_grad = True  # Set requires_grad to True to compute gradients
+        input_data.requires_grad_() # Set requires_grad to True to compute gradients
         self.label = label
+        for param in self.model.parameters():
+            param.requires_grad_()
+
+        for name, param in self.model.named_parameters():
+            if torch.all(param == 0):
+                print(f"Layer {name} has all zero weights.")
 
         # state_dictionary = self.model.state_dict()
 
@@ -695,6 +724,9 @@ class PunisherLoss(nn.Module):
 
         # Forward pass
         outputs = self.model(input_data) 
+        print(input_data)
+        if torch.all(outputs==0):
+            print("the outputs are all zero")
         outputs.required_grad = True
         params = dict(self.model.named_parameters())
 
@@ -708,6 +740,8 @@ class PunisherLoss(nn.Module):
         # assert self.loss == functionalized_model(input_data, target)
         # assert torch.equal(outputs ,self.model.forward(input_data))
 
+                # Check if the operations are performed with torch.no_grad() context
+
         self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
         
         jacobian_x = self.jacobian_func(params,input_data, target)
@@ -716,9 +750,10 @@ class PunisherLoss(nn.Module):
         # here i compute the jacobian to have a backpropagatable way to get input.grad
         # jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
 
-        # assert torch.allclose(jacobian,jacobian_x)
 
         gradients = torch.matmul(jacobian_x, torch.ones_like(input_data))
+
+        print(jacobian_x)
 
         # Backpropagate to compute gradients with respect to the output
         # self.loss.backward(retain_graph=True)
@@ -804,7 +839,7 @@ class PunisherLoss(nn.Module):
 
         # Create Pillow image
         saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
-
+        self.model.train()
         return saliency_map_pil
 
     def get_final_conv_layer(self):
