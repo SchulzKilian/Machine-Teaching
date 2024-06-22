@@ -37,6 +37,7 @@ class PunisherLoss(nn.Module):
         self.epochs = []
         self.loss = None
         self.format = None
+        self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
         self.optimizer = optim.SGD(model.parameters(),0.001)
         self.frozen_layers = []
         self.fcall = lambda params, x: functional_call(self.model, params, x)
@@ -222,19 +223,25 @@ class PunisherLoss(nn.Module):
                 # print(f"limit is {limit}")
             if param.grad is not None and instance_type is None:
                 param.data[abs(param.grad) > limit] = 0
-                param.data[abs(param.grad) <= limit]# *= 1/(1-percentile)
+                param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
                 # print(f"Amount of zeros before is {param.data.numel()} amount removed is {param.data[abs(param.grad) > limit].numel()}")
             elif param.grad is not None and isinstance(param, instance_type):
                 param.data[abs(param.grad) > limit] = 0
-                param.data[abs(param.grad) <= limit]# *= 1/(1-percentile)
+                param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
             sum2 =torch.sum(param.data)
-            print(f"We went from {sum1} to {sum2}")
+            # print(f"We went from {sum1} to {sum2}")
             param.requires_grad_()
 
 
 
     def backward(self):
-
+        if self.marked_pixels.numel() == 0:
+            return
+        for param in self.model.parameters():
+            if param.grad is not None:
+                param.grad.zero_()
+        image = transforms.ToPILImage()(self.marked_pixels)
+        image.show()
         loss = (torch.sum((self.gradients)* self.marked_pixels)) #  + self.loss
         validation1 = self.am_I_overfitting().item()
         loss.backward()
@@ -251,6 +258,7 @@ class PunisherLoss(nn.Module):
         update = image_window.run()
         if not update:
             self.model.load_state_dict(old_model)
+            
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
@@ -723,26 +731,34 @@ class PunisherLoss(nn.Module):
         # input_data_copy.requires_grad = True
 
         # Forward pass
-        outputs = self.model(input_data) 
-        print(input_data)
-        if torch.all(outputs==0):
-            print("the outputs are all zero")
-        outputs.required_grad = True
+        # outputs = self.model(input_data) 
         params = dict(self.model.named_parameters())
+        
+        print(input_data)
+
+        
 
         self.input = input_data
         # functionalized_model = func.functionalize(self.modelfunction)
-        
+        outputs = self.fcall(params,input_data)
+        print(outputs)
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
         self.target = target
+
         self.loss = self.default_loss(outputs, target)
+
+
+
+        for name, param in self.model.named_parameters():
+            if torch.all(param == 0):
+                print(f"Layer {name} has all zero weights.")
         # assert self.loss == functionalized_model(input_data, target)
         # assert torch.equal(outputs ,self.model.forward(input_data))
 
                 # Check if the operations are performed with torch.no_grad() context
 
-        self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
+        
         
         jacobian_x = self.jacobian_func(params,input_data, target)
         
@@ -751,7 +767,7 @@ class PunisherLoss(nn.Module):
         # jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
 
 
-        gradients = torch.matmul(jacobian_x, torch.ones_like(input_data))
+        self.gradients = torch.matmul(jacobian_x, torch.ones_like(input_data))
 
         print(jacobian_x)
 
@@ -790,7 +806,11 @@ class PunisherLoss(nn.Module):
 
         # Compute the importance weights based on gradients
 
-        self.gradients = gradients 
+        gradients = self.gradients
+
+        for param in self.model.parameters():
+            if param.grad is not None:
+                param.grad.zero_()
 
         importance_weights = torch.mean(gradients, dim=(1, 2, 3), keepdim=True)
 
