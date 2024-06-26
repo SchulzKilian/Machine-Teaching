@@ -228,11 +228,14 @@ class PunisherLoss(nn.Module):
             elif param.grad is not None and isinstance(param, instance_type):
                 param.data[abs(param.grad) > limit] = 0
                 param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
-            sum2 =torch.sum(param.data)
+            sum2 =torch.sum(param.data)  
             # print(f"We went from {sum1} to {sum2}")
             param.requires_grad_()
 
-
+    def zero_grads(self):
+        for param in self.model.parameters():
+            if param.grad is not None:
+                param.grad.zero_()
 
     def backward(self):
         if self.marked_pixels.numel() == 0:
@@ -240,21 +243,43 @@ class PunisherLoss(nn.Module):
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
-        image = transforms.ToPILImage()(self.marked_pixels)
-        image.show()
-        loss = (torch.sum((self.gradients)* self.marked_pixels)) #  + self.loss
+        image = transforms.ToPILImage()((self.marked_pixels).squeeze(0))
+        print(self.marked_pixels*self.gradients)
+        print(f"non zero elements are  {self.marked_pixels.shape} and {self.gradients.shape}")
+        # image.show()
+        self.marked_pixels.requires_grad = True
+        loss = torch.sum(self.marked_pixels*self.gradients)
+
+        # marked_pixels_grad = torch.tensor(self.marked_pixe ls, requires_grad=True)
+        # loss1 = (torch.sum((self.gradients*marked_pixels_grad)))
+        
         validation1 = self.am_I_overfitting().item()
         loss.backward()
+        layergrad1 = self.model.fc1.weight.grad
+        self.model.fc1.weight.grad.zero_()
+        # layergrad0 = self.model.fc1.weight.grad 
+
+        # layergrad2 = self.model.fc1.weight.grad
+        # print(layergrad1)
+        saliency1 = self.compute_saliency_map(self.input,self.label) 
+
+
+        # print(layergrad2)
+        # assert torch.equal(layergrad1,layergrad2)
         old_model = self.model.state_dict()
         self.measure_impact()
         self.zero_weights_with_non_zero_gradients()
         validation2 = self.am_I_overfitting().item()
+        saliency2 = self.compute_saliency_map(self.input,self.label) 
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
-        saliency2 = self.compute_saliency_map(self.input,self.label)
+        
+
         self.measure_impact()
-        image_window = ChoserWindow(self.saliency, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
+        image_window = ChoserWindow(saliency1, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
+        saliency1.paste(saliency1, (0, 0), saliency2) 
+        saliency1.show()
         update = image_window.run()
         if not update:
             self.model.load_state_dict(old_model)
@@ -645,7 +670,7 @@ class PunisherLoss(nn.Module):
 
             def close_window():
                 newimage = image.clone()
-                self.marked_pixels = torch.zeros((1, height, width))
+                self.marked_pixels = torch.zeros((1, 3, height, width))
 
                 self.marked_pixels_count = 0  # Counter for marked pixels
 
@@ -656,7 +681,7 @@ class PunisherLoss(nn.Module):
                         if drawn_image.getpixel((original_y, original_x)) == (255, 0, 1) and saliency_map.getpixel((original_y, original_x))[3] > 0:
                             r,g,b = image[0,x,y].item(), image[1,x,y].item(),image[2,x,y].item()
                             newimage[0,x,y],newimage[1,x,y], newimage[2,x,y]= r-1,g-1,b-1
-                            self.marked_pixels[0,x,y] = 1
+                            self.marked_pixels[0,0,x,y],self.marked_pixels[0,1,x,y],self.marked_pixels[0,2,x,y] = 1,1,1
                             self.marked_pixels_count += 1
 
                 
