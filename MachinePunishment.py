@@ -240,26 +240,18 @@ class PunisherLoss(nn.Module):
     def backward(self):
         if self.marked_pixels.numel() == 0:
             return
-        for param in self.model.parameters():
-            if param.grad is not None:
-                param.grad.zero_()
-        image = transforms.ToPILImage()((self.marked_pixels).squeeze(0))
-        print(self.marked_pixels*self.gradients)
-        print(f"non zero elements are  {self.marked_pixels.shape} and {self.gradients.shape}")
-        # image.show()
+        
+        self.zero_grads()
+
+        saliency1 = self.compute_saliency_map(self.input,self.label) 
         self.marked_pixels.requires_grad = True
         loss = torch.sum(self.marked_pixels*self.gradients)
         validation1 = self.am_I_overfitting().item()
         loss.backward()
-
-        saliency1 = self.compute_saliency_map(self.input,self.label) 
-
-
-        # print(layergrad2)
-        # assert torch.equal(layergrad1,layergrad2)
         old_model = self.model.state_dict()
         self.measure_impact()
         self.zero_weights_with_non_zero_gradients()
+        self.zero_grads()
         validation2 = self.am_I_overfitting().item()
         saliency2 = self.compute_saliency_map(self.input,self.label) 
         for param in self.model.parameters():
@@ -276,9 +268,7 @@ class PunisherLoss(nn.Module):
         if not update:
             self.model.load_state_dict(old_model)
             
-        for param in self.model.parameters():
-            if param.grad is not None:
-                param.grad.zero_()
+        self.zero_grads()
 
         # self.show_gradients()
         
