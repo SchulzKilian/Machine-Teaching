@@ -249,18 +249,9 @@ class PunisherLoss(nn.Module):
         # image.show()
         self.marked_pixels.requires_grad = True
         loss = torch.sum(self.marked_pixels*self.gradients)
-
-        # marked_pixels_grad = torch.tensor(self.marked_pixe ls, requires_grad=True)
-        # loss1 = (torch.sum((self.gradients*marked_pixels_grad)))
-        
         validation1 = self.am_I_overfitting().item()
         loss.backward()
-        layergrad1 = self.model.fc1.weight.grad
-        self.model.fc1.weight.grad.zero_()
-        # layergrad0 = self.model.fc1.weight.grad 
 
-        # layergrad2 = self.model.fc1.weight.grad
-        # print(layergrad1)
         saliency1 = self.compute_saliency_map(self.input,self.label) 
 
 
@@ -278,8 +269,9 @@ class PunisherLoss(nn.Module):
 
         self.measure_impact()
         image_window = ChoserWindow(saliency1, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
-        saliency1.paste(saliency1, (0, 0), saliency2) 
-        saliency1.show()
+        blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
+        
+        blended_image.show()
         update = image_window.run()
         if not update:
             self.model.load_state_dict(old_model)
