@@ -28,9 +28,9 @@ class Mode(enum.Enum):
 
 
 
-
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
+    green_color = "#00FF01"
     def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.SCALE_UP):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
@@ -207,16 +207,29 @@ class PunisherLoss(nn.Module):
 
 
 
-
+    def adjust_weights_according_grad(self):
+        for name, param in self.model.named_parameters():
+            if name.startswith("cokollklnv"):
+                continue
+            if param.grad is not None:
+                param.data = param.data - param.grad
     
 
     def zero_weights_with_non_zero_gradients(self, instance_type= None):
-        for param in self.model.parameters():
+        for name, param in self.model.named_parameters():
+
+            if not name.startswith(instance_type):
+                continue
+            print(name)
+            if param.grad is None:
+                continue
+
             if torch.isnan(param.grad).any():
                 print("Gradient contains NaN values.")
                 continue  # Skip this parameter
             sum1 =torch.sum(param.data)
-            percentile = 1-  (self.marked_pixels_count*3)/self.input.numel()
+            
+            percentile = 1-  (max(self.pos_marked_pixels_count,self.marked_pixels_count)*3)/self.input.numel()
             # print(f"percentile is {percentile}")
             if param.grad is not None:
                 limit = torch.quantile(abs(param.grad), percentile).item()
@@ -225,7 +238,8 @@ class PunisherLoss(nn.Module):
                 param.data[abs(param.grad) > limit] = 0
                 param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
                 # print(f"Amount of zeros before is {param.data.numel()} amount removed is {param.data[abs(param.grad) > limit].numel()}")
-            elif param.grad is not None and isinstance(param, instance_type):
+            
+            elif param.grad is not None:
                 param.data[abs(param.grad) > limit] = 0
                 param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
             sum2 =torch.sum(param.data)  
@@ -238,19 +252,27 @@ class PunisherLoss(nn.Module):
                 param.grad.zero_()
 
     def backward(self):
-        if self.marked_pixels.numel() == 0:
+        print(self.pos_marked_pixels_count)
+        if self.marked_pixels_count + self.pos_marked_pixels_count  == 0:
             return
         
         self.zero_grads()
-
+        validation1 = self.am_I_overfitting().item()
         saliency1 = self.compute_saliency_map(self.input,self.label) 
         self.marked_pixels.requires_grad = True
+
+    
         loss = torch.sum(self.marked_pixels*self.gradients)
-        validation1 = self.am_I_overfitting().item()
+
+                                
+
         loss.backward()
+       
+        # assert torch.equal(gradientsnow,self.model.fc1.weight.grad)
         old_model = self.model.state_dict()
         self.measure_impact()
-        self.zero_weights_with_non_zero_gradients()
+        # self.zero_weights_with_non_zero_gradients("conv")
+        self.adjust_weights_according_grad()
         self.zero_grads()
         validation2 = self.am_I_overfitting().item()
         saliency2 = self.compute_saliency_map(self.input,self.label) 
@@ -265,6 +287,7 @@ class PunisherLoss(nn.Module):
         
         blended_image.show()
         update = image_window.run()
+        print(f"update it {update}")
         if not update:
             self.model.load_state_dict(old_model)
             
@@ -630,6 +653,14 @@ class PunisherLoss(nn.Module):
             drawn_image = Image.new("RGB", (new_width, new_height), "white")
             draw = ImageDraw.Draw(drawn_image)
 
+            self.color = self.red_color
+
+
+
+            # Add a button to switch between red and green
+            self.switch_button = tk.Button(window, text="Switch Color", command=self.switch_color, bg = self.color)
+            self.switch_button.pack(side="bottom")
+
             # Prevent the saliency_map_tk from being garbage-collected prematurely
             canvas.image = blended_image_tk
             def reset(self):
@@ -640,10 +671,20 @@ class PunisherLoss(nn.Module):
                 x, y = event.x, event.y
                 prev_x, prev_y = getattr(canvas, 'prev_x', None), getattr(canvas, 'prev_y', None)
                 if prev_x is not None and prev_y is not None:
-                    draw.line([prev_x, prev_y, x, y], fill=self.red_color, width=self.radius*2, joint="curve" )  # Draw line on the image buffer
-                    canvas.create_line(prev_x, prev_y, x, y, fill=self.red_color, width=self.radius*2, smooth=True, splinesteps=10, capstyle='round', joinstyle='round')
+                    draw.line([prev_x, prev_y, x, y], fill=self.color, width=self.radius*2, joint="curve" )  # Draw line on the image buffer
+                    canvas.create_line(prev_x, prev_y, x, y, fill=self.color, width=self.radius*2, smooth=True, splinesteps=10, capstyle='round', joinstyle='round')
 
                 canvas.prev_x, canvas.prev_y = x, y
+
+
+            def on_enter(event):
+                self.switch_button.configure(bg=self.color, activebackground=self.color)
+
+            def on_leave(event):
+                self.switch_button.configure(bg= self.color)
+
+            self.switch_button.bind("<Enter>", on_enter)
+            self.switch_button.bind("<Leave>", on_leave)
 
             canvas.bind("<B1-Motion>", lambda event: drag(event))
             canvas.bind("<ButtonRelease-1>", reset)
@@ -654,7 +695,9 @@ class PunisherLoss(nn.Module):
                 newimage = image.clone()
                 self.marked_pixels = torch.zeros((1, 3, height, width))
 
+
                 self.marked_pixels_count = 0  # Counter for marked pixels
+                self.pos_marked_pixels_count = 0 # Counter for encouraged pixels
 
                 for x in range(height):
                     for y in range(width):
@@ -663,8 +706,13 @@ class PunisherLoss(nn.Module):
                         if drawn_image.getpixel((original_y, original_x)) == (255, 0, 1) and saliency_map.getpixel((original_y, original_x))[3] > 0:
                             r,g,b = image[0,x,y].item(), image[1,x,y].item(),image[2,x,y].item()
                             newimage[0,x,y],newimage[1,x,y], newimage[2,x,y]= r-1,g-1,b-1
-                            self.marked_pixels[0,0,x,y],self.marked_pixels[0,1,x,y],self.marked_pixels[0,2,x,y] = 1,1,1
+                            self.marked_pixels[0,0,x,y],self.marked_pixels[0,1,x,y],self.marked_pixels[0,2,x,y] =1,1,1
                             self.marked_pixels_count += 1
+                        if drawn_image.getpixel((original_y, original_x)) == (0, 255, 1) and saliency_map.getpixel((original_y, original_x))[3] > 0:
+                            r,g,b = image[0,x,y].item(), image[1,x,y].item(),image[2,x,y].item()
+                            newimage[0,x,y],newimage[1,x,y], newimage[2,x,y]= r-1,g-1,b-1
+                            self.marked_pixels[0,0,x,y],self.marked_pixels[0,1,x,y],self.marked_pixels[0,2,x,y] = -1,-1,-1
+                            self.pos_marked_pixels_count += 1
 
                 
                 # self.process_image(newimage).resize((new_width,new_height)).show()
@@ -692,6 +740,16 @@ class PunisherLoss(nn.Module):
         return self
         # return (torch.sum((self.gradients)* self.marked_pixels))/50 + self.loss
         # return torch.sum(abs(self.gradients)* self.marked_pixels)
+    
+    def switch_color(self):
+        if self.color == self.red_color:
+            self.color = self.green_color
+        else:
+            self.color = self.red_color
+        self.switch_button.configure(bg=self.color)
+    
+    def get_color(self):
+        return self.color
     
     def measure_impact(self):
 
@@ -741,14 +799,14 @@ class PunisherLoss(nn.Module):
         # outputs = self.model(input_data) 
         params = dict(self.model.named_parameters())
         
-        print(input_data)
+        # print(input_data)
 
         
 
         self.input = input_data
         # functionalized_model = func.functionalize(self.modelfunction)
         outputs = self.fcall(params,input_data)
-        print(outputs)
+        # print(outputs)
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
         self.target = target
@@ -776,7 +834,7 @@ class PunisherLoss(nn.Module):
 
         self.gradients = torch.matmul(jacobian_x, torch.ones_like(input_data))
 
-        print(jacobian_x)
+        # print(jacobian_x)
 
         # Backpropagate to compute gradients with respect to the output
         # self.loss.backward(retain_graph=True)

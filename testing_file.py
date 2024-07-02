@@ -93,6 +93,7 @@ def test_model(model, test_loader):
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
+            
             correct += (predicted == labels).sum().item()
     accuracy = 100 * correct / total
     return accuracy
