@@ -209,17 +209,17 @@ class PunisherLoss(nn.Module):
 
     def adjust_weights_according_grad(self):
         for name, param in self.model.named_parameters():
-            if name.startswith("cokollklnv"):
+            if name.startswith("conv") and False:
                 continue
             if param.grad is not None:
-                param.data = param.data - param.grad
+                param.data = param.data - param.grad* 0.01
     
 
     def zero_weights_with_non_zero_gradients(self, instance_type= None):
         for name, param in self.model.named_parameters():
-
-            if not name.startswith(instance_type):
-                continue
+            if not instance_type is None:
+                if not name.startswith(instance_type):
+                    continue
             print(name)
             if param.grad is None:
                 continue
@@ -229,7 +229,8 @@ class PunisherLoss(nn.Module):
                 continue  # Skip this parameter
             sum1 =torch.sum(param.data)
             
-            percentile = 1-  (max(self.pos_marked_pixels_count,self.marked_pixels_count)*3)/self.input.numel()
+            # percentile = 1-  (max(self.pos_marked_pixels_count,self.marked_pixels_count)*3)/self.input.numel()
+            percentile = 0.2
             # print(f"percentile is {percentile}")
             if param.grad is not None:
                 limit = torch.quantile(abs(param.grad), percentile).item()
@@ -261,27 +262,23 @@ class PunisherLoss(nn.Module):
         saliency1 = self.compute_saliency_map(self.input,self.label) 
         self.marked_pixels.requires_grad = True
 
-    
-        loss = torch.sum(self.marked_pixels*self.gradients)
-
-                                
-
+        print(f"the shape of gradients and marked_pixels is {self.marked_pixels.shape} and {self.gradients.shape}")
+        loss = torch.sum(self.marked_pixels*self.gradients)   
+        # loss = -self.gradients[0,0,0,0]
         loss.backward()
-       
+        print("first loss was "+str(loss))
         # assert torch.equal(gradientsnow,self.model.fc1.weight.grad)
         old_model = self.model.state_dict()
-        self.measure_impact()
+        self.measure_impact_pixels()
         # self.zero_weights_with_non_zero_gradients("conv")
-        self.adjust_weights_according_grad()
+        self.zero_weights_with_non_zero_gradients()
         self.zero_grads()
-        validation2 = self.am_I_overfitting().item()
-        saliency2 = self.compute_saliency_map(self.input,self.label) 
-        for param in self.model.parameters():
-            if param.grad is not None:
-                param.grad.zero_()
         
+        validation2 = self.am_I_overfitting().item()
 
-        self.measure_impact()
+        saliency2 = self.compute_saliency_map(self.input,self.label) 
+        print("important it is "+str(torch.sum(self.marked_pixels*self.gradients)))
+        self.measure_impact_pixels()
         image_window = ChoserWindow(saliency1, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
         blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
         
@@ -735,7 +732,7 @@ class PunisherLoss(nn.Module):
         close_button = tk.Button(window, text="Continue", command=close_window)
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
         root.mainloop()
-        print(f"Loss is {self.loss.item()} and my added loss is {torch.sum(nn.Sigmoid()(self.gradients)* self.marked_pixels)/torch.sum(self.marked_pixels)}")
+        # print(f"Loss is {self.loss.item()} and my added loss is {torch.sum(nn.Sigmoid()(self.gradients)* self.marked_pixels)/torch.sum(self.marked_pixels)}")
         # return self.loss
         return self
         # return (torch.sum((self.gradients)* self.marked_pixels))/50 + self.loss
@@ -753,13 +750,31 @@ class PunisherLoss(nn.Module):
     
     def measure_impact(self):
 
-        if self.marked_pixels != None:
+        if self.marked_pixels is not None:
             # print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
             # print(f"Sum of gradients is {torch.sum(self.gradients)}")
+            negative_pixels = torch.clamp(self.marked_pixels,min=0)
+            positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
             try:
-                print(f"The weights that contributed to the marked pixels now make up {str(torch.sum(self.marked_pixels*abs(self.gradients)).item()/torch.sum(abs(self.gradients)).item())}")
+                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
+                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
             except:
                 pass
+    def measure_impact_pixels(self):
+
+        if self.marked_pixels is not None:
+            # print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
+            # print(f"Sum of gradients is {torch.sum(self.gradients)}")
+            negative_pixels = torch.clamp(self.marked_pixels,min=0)
+            positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
+            gradients = self.gradients.clone()
+            gradients[gradients!=0]= 1
+            try:
+                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
+                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
+            except:
+                pass
+
     # Function to handle forward pass hook
     def forward_hook(self, module, input, output,name):
         # Store the output (activation) of the module
@@ -832,9 +847,7 @@ class PunisherLoss(nn.Module):
         # jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
 
 
-        self.gradients = torch.matmul(jacobian_x, torch.ones_like(input_data))
-
-        # print(jacobian_x)
+        self.gradients = torch.abs(torch.matmul(jacobian_x, torch.ones_like(input_data)))        # print(jacobian_x)
 
         # Backpropagate to compute gradients with respect to the output
         # self.loss.backward(retain_graph=True)
