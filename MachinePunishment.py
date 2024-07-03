@@ -212,7 +212,9 @@ class PunisherLoss(nn.Module):
             if name.startswith("conv") and False:
                 continue
             if param.grad is not None:
-                param.data = param.data - param.grad* 0.01
+                torch.nn.utils.clip_grad_value_(param, clip_value=1.0)
+                param.data = param.data - param.grad* 0.001
+                param.grad.zero_()
     
 
     def zero_weights_with_non_zero_gradients(self, instance_type= None):
@@ -256,22 +258,39 @@ class PunisherLoss(nn.Module):
         print(self.pos_marked_pixels_count)
         if self.marked_pixels_count + self.pos_marked_pixels_count  == 0:
             return
-        
+        old_model = self.model.state_dict()
+        self.marked_pixels.requires_grad = True
         self.zero_grads()
         validation1 = self.am_I_overfitting().item()
         saliency1 = self.compute_saliency_map(self.input,self.label) 
-        self.marked_pixels.requires_grad = True
+        validation_loss= self.am_I_overfitting().item()
+        current_loss = validation_loss
+        real_loss = torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
+        loss = real_loss
+        while current_loss < validation_loss*2 and loss.item()  > real_loss.item()-abs(real_loss.item()/2):
+            loss = torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
+            loss.backward()
+            print(f"loss is {loss}")
+            self.adjust_weights_according_grad()
+            saliency2 = self.compute_saliency_map(self.input,self.label).show()
+            self.measure_impact_pixels()
+            current_loss = self.am_I_overfitting().item()
+        
+        if not current_loss < validation_loss*2:
+            print("it went out for the validation loss")
+        
+        if not loss.item()  > real_loss.item()-abs(real_loss.item()/2):
+            print("it went out for the custom loss")
+            print(loss.item())
+            print(real_loss.item())
 
-        print(f"the shape of gradients and marked_pixels is {self.marked_pixels.shape} and {self.gradients.shape}")
-        loss = torch.sum(self.marked_pixels*self.gradients)   
-        # loss = -self.gradients[0,0,0,0]
-        loss.backward()
-        print("first loss was "+str(loss))
-        # assert torch.equal(gradientsnow,self.model.fc1.weight.grad)
-        old_model = self.model.state_dict()
+
+
+        
         self.measure_impact_pixels()
         # self.zero_weights_with_non_zero_gradients("conv")
-        self.zero_weights_with_non_zero_gradients()
+        # self.zero_weights_with_non_zero_gradients()
+        self.adjust_weights_according_grad()
         self.zero_grads()
         
         validation2 = self.am_I_overfitting().item()
@@ -682,6 +701,7 @@ class PunisherLoss(nn.Module):
 
             self.switch_button.bind("<Enter>", on_enter)
             self.switch_button.bind("<Leave>", on_leave)
+            self.switch_button.bind("<ButtonRelease-1>", on_enter)
 
             canvas.bind("<B1-Motion>", lambda event: drag(event))
             canvas.bind("<ButtonRelease-1>", reset)
