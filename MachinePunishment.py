@@ -1,15 +1,20 @@
 import torch
 import torch.nn as nn
 from torchvision import transforms
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageFile
 import tkinter as tk
 import matplotlib.pyplot as plt
 import torch.optim as optim
+import imagehash
 import numpy as np
 import torch.nn.functional as F
 import torch.func as func
 from torch.func import functional_call
 import random
+import hashlib
+import pickle
+import uuid
+
 
 from torch import vmap
 
@@ -811,6 +816,7 @@ class PunisherLoss(nn.Module):
         return loss
         
     def compute_saliency_map(self, input_data, label):
+        # ImageFile.LOAD_TRUNCATED_IMAGES = False
 
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad_() # Set requires_grad to True to compute gradients
@@ -840,12 +846,13 @@ class PunisherLoss(nn.Module):
 
         self.input = input_data
         # functionalized_model = func.functionalize(self.modelfunction)
-        outputs = self.fcall(params,input_data)
+        # outputs = self.fcall(params,input_data)
         # print(outputs)
+        outputs = self.model(input_data)
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
         self.target = target
-
+        outputs = self.model(input_data)
         self.loss = self.default_loss(outputs, target)
 
 
@@ -867,7 +874,8 @@ class PunisherLoss(nn.Module):
         # jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
 
 
-        self.gradients = torch.abs(torch.matmul(jacobian_x, torch.ones_like(input_data)))        # print(jacobian_x)
+        # self.gradients = torch.abs(torch.matmul(jacobian_x, torch.ones_like(input_data)))        # print(jacobian_x)
+
 
         # Backpropagate to compute gradients with respect to the output
         # self.loss.backward(retain_graph=True)
@@ -904,61 +912,99 @@ class PunisherLoss(nn.Module):
 
         # Compute the importance weights based on gradients
 
-        gradients = self.gradients
+        # gradients = self.gradients
 
+        gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True)[0])
+
+        self.gradients = gradients
+
+        # print(self.gradients)
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
+        max_grad = gradients.max().detach()
+        normalized_gradients = gradients / (max_grad + 1e-8) 
 
-        importance_weights = torch.mean(gradients, dim=(1, 2, 3), keepdim=True)
+        saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
 
-        # Weighted input data
-        weighted_input_data = F.relu(input_data * importance_weights)
-
-        # Normalize the weighted input data
-        normalized_input = weighted_input_data / weighted_input_data.max()
-
-        # Convert to numpy array
-        # saliency_map_numpy = normalized_input.squeeze().cpu().detach().numpy()
-        saliency_map_numpy = normalized_input.squeeze().cpu().clone().detach().numpy()
+        # Apply logarithmic scaling to enhance contrast
+        saliency_map_numpy = np.log1p(saliency_map_numpy)
+        saliency_map_numpy = (saliency_map_numpy / np.log1p(max_grad)) * 255
+        saliency_map_numpy = saliency_map_numpy.astype(np.uint8)
         
+
         # assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
-        
+        # saliency_map_numpy = (saliency_map_numpy - np.min(saliency_map_numpy)) / (np.max(saliency_map_numpy) - np.min(saliency_map_numpy))
         if len(saliency_map_numpy.shape) == 2:
 
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
-            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
-            safe_saliency_map = np.clip(saliency_map_numpy, 0, 1)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy.copy(), nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.clip(safe_saliency_map,0,1)
+            for i in range(safe_saliency_map.shape[0]):
+                non_zero_mask = safe_saliency_map[i] != 0
+                if np.any(non_zero_mask):
+                    non_zero_values = safe_saliency_map[i][non_zero_mask]
+                    normalized_values = (non_zero_values - np.min(non_zero_values)) / (np.max(non_zero_values) - np.min(non_zero_values))
+                    safe_saliency_map[i][non_zero_mask] = normalized_values
+            # safe_saliency_map = np.clip(saliency_map_numpy, 0, 1)
             green_intensity = (safe_saliency_map * 255).astype(np.uint8)
+            # print(green_intensity)
             alpha_channel = np.full_like(green_intensity, 128)
             # Set alpha channel to 0 where green intensity is zero
             alpha_channel[green_intensity == 0] = 0
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
         elif len(saliency_map_numpy.shape) == 3:
-            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
+            
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy.copy(), nan=0.0, posinf=1.0, neginf=0.0)
 
             # Clip values to the expected range (0 to 1)
             safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
+
+
+            for i in range(safe_saliency_map.shape[0]):
+                non_zero_mask = safe_saliency_map[i] != 0
+                if np.any(non_zero_mask):
+                    non_zero_values = safe_saliency_map[i][non_zero_mask]
+                    normalized_values = (non_zero_values - np.min(non_zero_values)) / (np.max(non_zero_values) - np.min(non_zero_values))
+                    safe_saliency_map[i][non_zero_mask] = normalized_values
+
+            # print(safe_saliency_map)
 
             # Create RGBA array with shape (height, width, 4)
             saliency_map_rgba = np.zeros((safe_saliency_map.shape[1], safe_saliency_map.shape[2], 4), dtype=np.uint8)
             
             # Calculate green intensity from the second channel of the saliency map
-            green_intensity = (safe_saliency_map[1] * 255).astype(np.uint8)
-
+            green_intensity = (np.mean(safe_saliency_map, axis=0) * 255).astype(np.uint8)
+            
+            # print(f"Value is {self.hash_value(green_intensity)}")
+            # print(green_intensity)
             alpha_channel = np.full_like(green_intensity, 128)
+            
+            # print(green_intensity)
+
 
             # Set alpha channel to 0 where green intensity is zero
             alpha_channel[green_intensity == 0] = 0
             # Repeat green_intensity and alpha_channel for each channel
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
+            
+        
 
         # Create Pillow image
-        saliency_map_pil = Image.fromarray(saliency_map_rgba, 'RGBA')
+        saliency_map_pil = Image.fromarray(saliency_map_rgba.copy(), 'RGBA')
+
+        # phash = imagehash.phash(saliency_map_pil, hash_size=16)
+        # print(f"phash is {phash} you potato")
         self.model.train()
+        # print(f"hash is {hash(saliency_map_pil)}")
         return saliency_map_pil
+    
+    def hash_value(self, value):
+        pickled = pickle.dumps(value)
+        return hashlib.sha256(pickled).hexdigest()
 
     def get_final_conv_layer(self):
         # Find the last convolutional layer in the model's architecture

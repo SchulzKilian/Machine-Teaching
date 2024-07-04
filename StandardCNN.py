@@ -97,13 +97,15 @@ class SimplestCNN(nn.Module):
         self.num_classes = classes
         self.conv1 = nn.Conv2d(num_input_channels, 8, kernel_size=3, stride=1, padding=1)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.fc1 = nn.Linear(8 * 16 * 16, 64)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 1))  # Adaptive pooling to ensure fixed size output
+        self.fc1 = nn.Linear(8, 64)  # 8 channels from conv1
         self.fc2 = nn.Linear(64, classes)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = self.pool(x)
-        x = x.view(-1, 8 * 16 * 16)
+        x = self.adaptive_pool(x)  # Adaptive pooling to (1, 1)
+        x = x.view(x.size(0), -1)  # Flatten the tensor
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
