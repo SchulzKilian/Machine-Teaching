@@ -289,7 +289,7 @@ class PunisherLoss(nn.Module):
         epochs = []
         epoch = 0
         self.measure_impact_pixels()
-        print("loss is {validation_loss}")
+        print(f"loss is {validation_loss}")
         while current_loss < validation_loss*1.2 and loss.item()  > real_loss.item()-abs(real_loss.item()/2) and time.time() - start_time < max_duration:
             _ = self.compute_saliency_map(self.input, self.label)
             positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
@@ -300,12 +300,13 @@ class PunisherLoss(nn.Module):
             validation_losses.append(current_loss)
             current_loss = self.am_I_overfitting().item()
             epoch +=1
-        print("loss is {validation_loss}")
+            loss = self.getloss("classic")
+        print(f"loss is {validation_loss}")
         saliency2 = self.compute_saliency_map(self.input,self.label).show()
         self.measure_impact_pixels()
         plt.figure(figsize=(10, 6))
-        plt.plot(epochs, negative_percentage, marker='o', label='Percentage Positive')
-        plt.plot(epochs, positive_percentage, marker='s', label='Percentage Negative')
+        plt.plot(epochs, negative_percentage, marker='o', label='Percentage Negative')
+        plt.plot(epochs, positive_percentage, marker='s', label='Percentage Positive')
         # plt.plot(epochs, validation_losses, marker='^', label='Validation')
 
         plt.title('Development Model')
@@ -634,7 +635,7 @@ class PunisherLoss(nn.Module):
         self.model.eval()
         outputs = self.model(self.validation_set[0])
         loss = self.default_loss(outputs,self.validation_set[1])
-        print("the current loss is "+str(loss.item()))
+        # print("the current loss is "+str(loss.item()))
         self.model.train()
         return loss
 
