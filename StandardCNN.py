@@ -120,6 +120,8 @@ class SimplestCNN(nn.Module):
                 print(outputs)
                 loss = criterion(outputs, labels,epoch)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.0)
+
                 optimizer.step()
                 running_loss += loss.item()
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')

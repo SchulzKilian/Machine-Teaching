@@ -13,6 +13,7 @@ from torch.func import functional_call
 import random
 import hashlib
 import pickle
+import time
 import uuid
 
 
@@ -258,6 +259,13 @@ class PunisherLoss(nn.Module):
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
+    def getloss(self, kind="classic"):
+        if kind == "classic":
+            return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
+        if kind == "normalized":
+            return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))/ torch.sum((self.gradients))
+            # continue
+        
 
     def backward(self):
         print(self.pos_marked_pixels_count)
@@ -270,17 +278,43 @@ class PunisherLoss(nn.Module):
         saliency1 = self.compute_saliency_map(self.input,self.label) 
         validation_loss= self.am_I_overfitting().item()
         current_loss = validation_loss
-        real_loss = torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
+        real_loss = self.getloss("classic")
         loss = real_loss
-        while current_loss < validation_loss*2 and loss.item()  > real_loss.item()-abs(real_loss.item()/2):
-            loss = torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
+        start_time = time.time()
+        max_duration = 300
+
+        positive_percentage = []
+        negative_percentage = []
+        validation_losses = []
+        epochs = []
+        epoch = 0
+        self.measure_impact_pixels()
+        print("loss is {validation_loss}")
+        while current_loss < validation_loss*1.2 and loss.item()  > real_loss.item()-abs(real_loss.item()/2) and time.time() - start_time < max_duration:
+            _ = self.compute_saliency_map(self.input, self.label)
+            positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
+            negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
+            epochs.append(epoch)
             loss.backward()
-            print(f"loss is {loss}")
             self.adjust_weights_according_grad()
-            saliency2 = self.compute_saliency_map(self.input,self.label).show()
-            self.measure_impact_pixels()
+            validation_losses.append(current_loss)
             current_loss = self.am_I_overfitting().item()
-        
+            epoch +=1
+        print("loss is {validation_loss}")
+        saliency2 = self.compute_saliency_map(self.input,self.label).show()
+        self.measure_impact_pixels()
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs, negative_percentage, marker='o', label='Percentage Positive')
+        plt.plot(epochs, positive_percentage, marker='s', label='Percentage Negative')
+        # plt.plot(epochs, validation_losses, marker='^', label='Validation')
+
+        plt.title('Development Model')
+        plt.xlabel('Epoch')
+        plt.ylabel('')
+        plt.legend()
+        plt.grid(True)
+
+        plt.show()
         if not current_loss < validation_loss*2:
             print("it went out for the validation loss")
         
@@ -790,13 +824,13 @@ class PunisherLoss(nn.Module):
         if self.marked_pixels is not None:
             # print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
             # print(f"Sum of gradients is {torch.sum(self.gradients)}")
-            negative_pixels = torch.clamp(self.marked_pixels,min=0)
-            positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
+            self.negative_pixels = torch.clamp(self.marked_pixels,min=0)
+            self.positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
             gradients = self.gradients.clone()
             gradients[gradients!=0]= 1
             try:
-                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
-                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
+                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
+                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
             except:
                 pass
 
@@ -930,7 +964,7 @@ class PunisherLoss(nn.Module):
         # Apply logarithmic scaling to enhance contrast
         saliency_map_numpy = np.log1p(saliency_map_numpy)
         saliency_map_numpy = (saliency_map_numpy / np.log1p(max_grad)) * 255
-        saliency_map_numpy = saliency_map_numpy.astype(np.uint8)
+        # saliency_map_numpy = saliency_map_numpy.astype(np.uint8)
         
 
         # assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
@@ -956,7 +990,7 @@ class PunisherLoss(nn.Module):
             saliency_map_rgba[:, :, 3] = alpha_channel
         elif len(saliency_map_numpy.shape) == 3:
             
-            safe_saliency_map = np.nan_to_num(saliency_map_numpy.copy(), nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
 
             # Clip values to the expected range (0 to 1)
             safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
