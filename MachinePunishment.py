@@ -290,7 +290,7 @@ class PunisherLoss(nn.Module):
         epoch = 0
         self.measure_impact_pixels()
         print(f"loss is {validation_loss}")
-        while current_loss < validation_loss*1.2 and loss.item()  > real_loss.item()-abs(real_loss.item()/2) and time.time() - start_time < max_duration:
+        while current_loss < validation_loss*1.2 and (loss.item()  > real_loss.item()-abs(real_loss.item()/2) or True) and time.time() - start_time < max_duration:
             _ = self.compute_saliency_map(self.input, self.label)
             positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
@@ -338,7 +338,7 @@ class PunisherLoss(nn.Module):
         saliency2 = self.compute_saliency_map(self.input,self.label) 
         print("important it is "+str(torch.sum(self.marked_pixels*self.gradients)))
         self.measure_impact_pixels()
-        image_window = ChoserWindow(saliency1, f"Original Model, accuracy {validation1}", saliency2, f"Modified Model, accuracy {validation2}")
+        image_window = ChoserWindow(saliency1, f"Original Model, loss {validation1}", saliency2, f"Modified Model, loss {validation2}")
         blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
         
         blended_image.show()

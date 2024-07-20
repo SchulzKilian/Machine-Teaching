@@ -17,7 +17,7 @@ from MachinePunishment import PunisherLoss
 batch_size = 1
 learning_rate = 0.1
 num_epochs = 10
-data_size = 100
+data_size = 454
 arg = "pets"
 
 
@@ -81,6 +81,7 @@ models = [SimplestCNN(classes,channels), ]
 for model in models:
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
     criterion = PunisherLoss(4,train_dataset,model)
+    # criterion = nn.CrossEntropyLoss()
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
 # Define a function to test a model

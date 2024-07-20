@@ -115,12 +115,13 @@ class SimplestCNN(nn.Module):
         for epoch in range(num_epochs):
             running_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader):
+                print(labels)
                 optimizer.zero_grad()
                 outputs = model(inputs)
-                print(outputs)
+                # loss = criterion(outputs, labels)
                 loss = criterion(outputs, labels,epoch)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.0)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.0)
 
                 optimizer.step()
                 running_loss += loss.item()
