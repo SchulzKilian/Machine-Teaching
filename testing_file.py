@@ -10,7 +10,7 @@ from MachinePunishment import PunisherLoss
 
 
 
-
+doglabels = [34, 21, 6, 33, 8, 1, 24, 27, 12, 10, 28, 7]
 
 
 # Define training parameters
@@ -18,7 +18,7 @@ batch_size = 1
 learning_rate = 0.1
 num_epochs = 10
 data_size = 454
-arg = "pets"
+arg = "catsvdogs"
 
 
 
@@ -31,7 +31,18 @@ class SubsetDataset(Dataset):
         return self.num_samples
 
     def __getitem__(self, idx):
-        return self.dataset[idx]
+        if arg !=  "catsvdogs":
+            return self.dataset[idx]
+        image, label = self.dataset[idx]
+        if label in doglabels:
+            print(f"converted label {label} to 0")
+            return image, 0
+        
+        else:
+            print(f"converted label {label} to 1")
+            return image, 1
+            
+
 
 # Load data
 
@@ -53,7 +64,7 @@ elif arg == "cars":
     test_dataset = datasets.StanfordCars(root='./cars', split= "test", transform=transform, download = True)
     train_dataset = datasets.StanfordCars(root='./cars', split="train",transform=transform, download=True)
 
-elif arg == "pets":
+elif arg == "pets" or arg == "catsvdogs":
     channels = 3
     classes = 37
     transform = transforms.Compose([
