@@ -268,7 +268,8 @@ class PunisherLoss(nn.Module):
         
 
     def backward(self):
-        print(self.pos_marked_pixels_count)
+        
+
         if self.marked_pixels_count + self.pos_marked_pixels_count  == 0:
             return
         old_model = self.model.state_dict()
@@ -291,6 +292,7 @@ class PunisherLoss(nn.Module):
         self.measure_impact_pixels()
         print(f"loss is {validation_loss}")
         while current_loss < validation_loss*1.2 and (loss.item()  > real_loss.item()-abs(real_loss.item()/2) or True) and time.time() - start_time < max_duration:
+        # while real_loss.item()
             _ = self.compute_saliency_map(self.input, self.label)
             positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
@@ -661,7 +663,7 @@ class PunisherLoss(nn.Module):
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             
             image, label = training_dataset[idx]
-
+            print(label)
             image_pil = self.process_image(image)
 
 
