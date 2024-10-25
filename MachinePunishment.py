@@ -37,10 +37,10 @@ class Mode(enum.Enum):
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
     green_color = "#00FF01"
-    def __init__(self, threshold: int, training_dataset, model, default_loss = None, mode = Mode.SCALE_UP):
+    def __init__(self, threshold: int, training_dataset, model, decide_callback, default_loss = None, mode = Mode.SCALE_UP):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
-        self.epochs = []
+        self.decide_callback = decide_callback
         self.loss = None
         self.format = None
         self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
@@ -128,13 +128,9 @@ class PunisherLoss(nn.Module):
     def setradius(self, radius):
         self.radius = radius
 
-    def forward(self, inputs, targets, epoch):
+    def forward(self, inputs, targets, epoch, number):
         print(epoch)
-        if epoch%self.threshold==0 and epoch not in self.epochs:
-
-            #return self.default_loss(inputs, targets)
-            print("custom")
-            self.epochs.append(epoch)
+        if self.decide_callback(epoch,number):
             return self.custom_loss_function(inputs, targets, self.training_dataset)
 
         

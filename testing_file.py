@@ -125,12 +125,17 @@ test_dataset = SubsetDataset(test_dataset,data_size)
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+def decide_callback(epoch, number):
+    if number in [1,2] and epoch % 3 == 0:
+        return True
+    else:
+        return False
 
 # Train each model
 models = [SimplestCNN(classes,channels), ]
 for model in models:
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(4,train_dataset,model)
+    criterion = PunisherLoss(4,train_dataset,model, decide_callback)
     # criterion = nn.CrossEntropyLoss()
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 

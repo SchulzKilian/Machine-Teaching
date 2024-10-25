@@ -80,7 +80,7 @@ class SimpleCNN(nn.Module):
                 model.train()
                 optimizer.zero_grad()
                 outputs = model(inputs)
-                loss = criterion(outputs, labels,epoch)
+                loss = criterion(outputs, labels,epoch, i)
                 loss.backward()
                 optimizer.step()
                 running_loss += loss.item()
