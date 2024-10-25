@@ -18,7 +18,7 @@ batch_size = 1
 learning_rate = 0.1
 num_epochs = 10
 data_size = 800
-arg = "pets"
+arg = "numbers"
 
 class CustomImageDataset(Dataset):
     def __init__(self, folder_path, num_samples):

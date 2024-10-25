@@ -119,7 +119,7 @@ class SimplestCNN(nn.Module):
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 # loss = criterion(outputs, labels)
-                loss = criterion(outputs, labels,epoch)
+                loss = criterion(outputs, labels,epoch, i)
                 loss.backward()
                 # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.0)
 
