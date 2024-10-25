@@ -7,8 +7,8 @@ from torch.utils.data import DataLoader, Dataset
 #from GuidedCNN import GuidedCNN
 from StandardCNN import ResNet50, SimpleCNN, SimplestCNN
 from MachinePunishment import PunisherLoss
-
-
+import os
+from PIL import Image
 
 doglabels = [34, 21, 6, 33, 8, 1, 24, 27, 12, 10, 28, 7]
 
@@ -17,15 +17,44 @@ doglabels = [34, 21, 6, 33, 8, 1, 24, 27, 12, 10, 28, 7]
 batch_size = 1
 learning_rate = 0.1
 num_epochs = 10
-data_size = 454
-arg = "catsvdogs"
+data_size = 800
+arg = "pets"
 
+class CustomImageDataset(Dataset):
+    def __init__(self, folder_path, num_samples):
+        self.images = []
+        self.labels = []
+        
+        # Load images from the specified folder
+        for filename in os.listdir(folder_path):
+            if filename.endswith(('.jpg', '.png', '.jpeg')):  # Check for image file extensions
+                file_path = os.path.join(folder_path, filename)
+                if filename.islower() and len(self.images) < num_samples // 2:
+                    self.images.append(file_path)
+                    self.labels.append(0)  # Label 0 for lowercase filenames
+                elif filename.isupper() and len(self.images) < num_samples:
+                    self.images.append(file_path)
+                    self.labels.append(1)  # Label 1 for uppercase filenames
+            
+            # Stop if we have enough samples
+            if len(self.images) >= num_samples:
+                break
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        image_path = self.images[idx]
+        label = self.labels[idx]
+        image = Image.open(image_path).convert('RGB')  # Open image and convert to RGB
+        return image, label
 
 
 class SubsetDataset(Dataset):
     def __init__(self, dataset, num_samples):
         self.dataset = dataset
         self.num_samples = num_samples
+
 
     def __len__(self):
         return self.num_samples
@@ -35,11 +64,9 @@ class SubsetDataset(Dataset):
             return self.dataset[idx]
         image, label = self.dataset[idx]
         if label in doglabels:
-            print(f"converted label {label} to 0")
             return image, 0
         
         else:
-            print(f"converted label {label} to 1")
             return image, 1
             
 
@@ -64,7 +91,7 @@ elif arg == "cars":
     test_dataset = datasets.StanfordCars(root='./cars', split= "test", transform=transform, download = True)
     train_dataset = datasets.StanfordCars(root='./cars', split="train",transform=transform, download=True)
 
-elif arg == "pets" or arg == "catsvdogs":
+elif arg == "pets":
     channels = 3
     classes = 37
     transform = transforms.Compose([
@@ -74,6 +101,18 @@ elif arg == "pets" or arg == "catsvdogs":
 ])
     test_dataset = datasets.OxfordIIITPet(root='./pets', split= "test", transform=transform, download = True)
     train_dataset = datasets.OxfordIIITPet(root='./pets',transform=transform, download=True)
+
+elif arg == "catsvdogs":
+    folder_path = './pets/oxford-iiit-pet/images'
+    channels = 3
+    classes = 37
+    transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize the images to match the input size of ResNet50
+    transforms.ToTensor(),          # Convert the images to PyTorch tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize the images
+    
+])
+
 
 train_dataset = SubsetDataset(train_dataset, data_size)
 test_dataset = SubsetDataset(test_dataset,data_size)
