@@ -37,10 +37,7 @@ class PunisherLoss(nn.Module):
         self.decide_callback = decide_callback
         self.loss = None
         self.format = None
-        # self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
         self.optimizer = optim.SGD(model.parameters(),0.001)
-        self.frozen_layers = []
-        # self.fcall = lambda params, x: functional_call(self.model, params, x)
         self.marked_pixels = None
         self.real = True
         self.saliency = None
@@ -61,25 +58,10 @@ class PunisherLoss(nn.Module):
         self.activations = {}  # Dictionary to store activations for each dense layer
         self.prev_layer_weights = self.get_previous_weights()
         # Define hooks
-        def register_hooks(module,name):
-            return
-            module.register_forward_hook(lambda module, input, output, name=name: self.forward_hook(module, input, output, name))
-        
+
 
         
 
-
-        previous = False
-        prev_mod = None
-        for name, module in self.model.named_children():
-            if previous:     
-                register_hooks(prev_mod, name)
-                previous = False
-            if isinstance(module, nn.Linear):
-                prev_mod = module
-                previous = True
-        if previous:
-            self.last_layer_linear = True
 
     def create_validation_set(self, dataset, num_samples):
         indices = torch.randperm(len(dataset))[:num_samples]
@@ -88,6 +70,7 @@ class PunisherLoss(nn.Module):
         return images, labels
     
     def get_previous_weights(self):
+        print("previous weights used")
         prev_weights = {}
         previous = False
         for name, module in self.model.named_children():
@@ -107,18 +90,11 @@ class PunisherLoss(nn.Module):
         return prev_weights
             
 
-    def item(self):
-        return self.loss.item()
-    
-
-    def distribution(self,tensor):
-        plt.hist(tensor.numpy().flatten(), bins=50)
-        plt.show()
-
 
 
 
     def setradius(self, radius):
+        print("radius is used")
         self.radius = radius
 
     def forward(self, inputs, targets, epoch, number):
@@ -133,6 +109,7 @@ class PunisherLoss(nn.Module):
 
 
     def slider_changed(self, value):
+        print("slider used")
         radius = int(value)
         self.setradius(radius)
 
@@ -164,43 +141,7 @@ class PunisherLoss(nn.Module):
     def get_model_params(self):
         return {name: param.clone() for name, param in self.model.state_dict().items()}
     
-    def freeze_layers(self,layers=None, instance=None):
-
-        if layers is not None:
-            for layer in layers:
-                layer_obj = getattr(self.model,layer)
-                layer_obj.requires_grad = False
-                self.frozen_layers.append(layer)
-        
-        if instance is not None:
-            for name, layer in self.model.named_children():
-                if isinstance(layer, instance):
-                    layer.requires_grad = False
-                    self.frozen_layers.append(name)
-
-
-    def unfreeze_layers(self, specific_layers=None, instance=None):
-        if specific_layers is None:
-            for layer_name in self.frozen_layers:
-                layer_obj = getattr(self.model, layer_name)
-                layer_obj.requires_grad = True
-            self.frozen_layers = []
-        
-        elif instance is not None:
-            for name, layer in self.model.named_children():
-                if isinstance(layer, instance):
-                    layer.requires_grad = True
-                    self.frozen_layers.remove(name)
-
-        elif specific_layers is not None:
-            for layer_name in specific_layers:
-                layer_obj = getattr(self.model, layer_name)
-                layer_obj.requires_grad = True
-                self.frozen_layers.remove(name)
-
-
-
-
+   
 
     def adjust_weights_according_grad(self):
         for name, param in self.model.named_parameters():
