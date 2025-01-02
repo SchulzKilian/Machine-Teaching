@@ -31,9 +31,9 @@ import enum
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
     green_color = "#00FF01"
-    def __init__(self, threshold: int, training_dataset, model, decide_callback, default_loss = None):
+    def __init__(self, training_dataset, model, decide_callback, default_loss = None):
         super(PunisherLoss, self).__init__()
-        self.threshold = threshold
+
         self.decide_callback = decide_callback
         self.loss = None
         self.format = None
@@ -44,7 +44,6 @@ class PunisherLoss(nn.Module):
         self.input = None
         self.validation_set = self.create_validation_set(training_dataset,100)
         self.label = None
-        self.last_layer_linear=False
         self.changed_activations= {}
         self.layer_factors = {}
         self.original_layers = {}
@@ -55,47 +54,12 @@ class PunisherLoss(nn.Module):
             self.default_loss = nn.CrossEntropyLoss()
         else:
             self.default_loss = default_loss
-        self.activations = {}  # Dictionary to store activations for each dense layer
-        self.prev_layer_weights = self.get_previous_weights()
-        # Define hooks
 
 
-        
 
-
-    def create_validation_set(self, dataset, num_samples):
-        indices = torch.randperm(len(dataset))[:num_samples]
-        images = torch.stack([dataset[i][0] for i in indices])
-        labels = torch.tensor([dataset[i][1] for i in indices])
-        return images, labels
+    def item(self):
+        return self.loss.item()
     
-    def get_previous_weights(self):
-        print("previous weights used")
-        prev_weights = {}
-        previous = False
-        for name, module in self.model.named_children():
-            if previous:
-                prev_weights[name]= weights
-                previous = False
-            if isinstance(module, nn.Linear):
-                previous = True
-                weights = module.weight
-        if previous:
-            prev_weights["output"]=weights
-
-            
-
-        
-
-        return prev_weights
-            
-
-
-
-
-    def setradius(self, radius):
-        print("radius is used")
-        self.radius = radius
 
     def forward(self, inputs, targets, epoch, number):
         print(epoch)
@@ -107,88 +71,38 @@ class PunisherLoss(nn.Module):
             print("default")
             return self.default_loss(inputs, targets)
 
+        
+
+
+    def create_validation_set(self, dataset, num_samples):
+        indices = torch.randperm(len(dataset))[:num_samples]
+        images = torch.stack([dataset[i][0] for i in indices])
+        labels = torch.tensor([dataset[i][1] for i in indices])
+        return images, labels
+    
+
+
+
+    def setradius(self, radius):
+        print("radius is used")
+        self.radius = radius
+
+
 
     def slider_changed(self, value):
         print("slider used")
         radius = int(value)
         self.setradius(radius)
 
-    def show_gradients(self):
-        sample_size = 1000
-        all_gradients = []
-
-        for param in self.model.parameters():
-            if param.grad is not None:
-                all_gradients.extend(param.grad.view(-1).tolist())
-        print("Ich hab so viele nullen:")
-        
-        print(len([i for i in all_gradients if i == 0.0]))
-        print("und soviele nicht nullen")
-        print(len([i for i in all_gradients if i != 0.0]))
-        if len(all_gradients) > sample_size:
-            pass
-            all_gradients = random.sample(all_gradients, sample_size)
-        # Plotting the gradients
-        plt.figure(figsize=(10, 6))
-
-        plt.scatter(range(len(all_gradients)), all_gradients, alpha=0.6, edgecolors='w', s=40)
-        plt.title('Scatter Plot of Gradients')
-        plt.ylabel('Gradient Value')
-        plt.grid(True)
-        plt.show()
 
 
-    def get_model_params(self):
-        return {name: param.clone() for name, param in self.model.state_dict().items()}
-    
-   
 
-    def adjust_weights_according_grad(self):
-        for name, param in self.model.named_parameters():
-            if name.startswith("conv") and False:
-                continue
-            if param.grad is not None:
-                torch.nn.utils.clip_grad_value_(param, clip_value=1.0)
-                param.data = param.data - param.grad* 0.001
-                param.grad.zero_()
-    
-
-    def zero_weights_with_non_zero_gradients(self, instance_type= None):
-        for name, param in self.model.named_parameters():
-            if not instance_type is None:
-                if not name.startswith(instance_type):
-                    continue
-            print(name)
-            if param.grad is None:
-                continue
-
-            if torch.isnan(param.grad).any():
-                print("Gradient contains NaN values.")
-                continue  # Skip this parameter
-            sum1 =torch.sum(param.data)
-            
-            # percentile = 1-  (max(self.pos_marked_pixels_count,self.marked_pixels_count)*3)/self.input.numel()
-            percentile = 0.2
-            # print(f"percentile is {percentile}")
-            if param.grad is not None:
-                limit = torch.quantile(abs(param.grad), percentile).item()
-                # print(f"limit is {limit}")
-            if param.grad is not None and instance_type is None:
-                param.data[abs(param.grad) > limit] = 0
-                param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
-                # print(f"Amount of zeros before is {param.data.numel()} amount removed is {param.data[abs(param.grad) > limit].numel()}")
-            
-            elif param.grad is not None:
-                param.data[abs(param.grad) > limit] = 0
-                param.data[abs(param.grad) <= limit] *= 1/(1-percentile)
-            sum2 =torch.sum(param.data)  
-            # print(f"We went from {sum1} to {sum2}")
-            param.requires_grad_()
 
     def zero_grads(self):
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
+
     def getloss(self, kind="classic"):
         if kind == "classic":
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
@@ -222,7 +136,7 @@ class PunisherLoss(nn.Module):
         self.measure_impact_pixels()
         print(f"loss is {validation_loss}")
         while current_loss < validation_loss*1.2 and (loss.item()  > real_loss.item()-abs(real_loss.item()/2) or True) and time.time() - start_time < max_duration:
-        # while real_loss.item()
+
             _ = self.compute_saliency_map(self.input, self.label)
             positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
@@ -284,180 +198,8 @@ class PunisherLoss(nn.Module):
         # self.show_gradients()
         
 
-    def explicit_backward(self):
-        total_params = sum(p.numel() for p in self.model.parameters())
-        print(f'Total parameters: {total_params}')
-
-        # hessian = func.jacrev(self.jacobian_func,  argnums = 0)
-
-        # self.target.unsqueeze(0)
-        
-        
-
-        # input_grad_grad = torch.autograd.grad(outputs=self.gradients, inputs=self.input, grad_outputs=torch.oneslike(self.gradients), retain_graph=True)[0]
-        self.model.zero_grad()
-        # self.gradients.requires_grad_()
-        # weight_gradients = torch.autograd.grad(self.gradients, self.model.parameters(), grad_outputs=torch.ones_like(self.gradients),  create_graph=True)
 
 
-
-        
-        for name, param in self.model.named_parameters(): 
-            print(f"input is {self.input.shape}")
-            print(f"input is {dict(self.model.named_parameters())[name].shape}")
-            print(f"parameter is {self.target.shape}")
-            
-            
-            # hessian_matrix = hessian(dict(self.model.named_parameters()), self.input, self.target)
-            # print(hessian_matrix)
-            break
-            continue
-            assert self.gradients.requires_grad, "gradients dont require gradient"
-            assert param.requires_grad, f"{name} parameters dont require gradient"
-            assert self.gradients.grad_fn is not None, "gradients were not part of graph"
-            assert param.grad_fn is not None, f"{name} parameters were not part of graph"
-
-
-
-            print(second_order_grad)
-
-
-
-
-    def old_backward(self):
-        old_parameters = self.get_model_params()
-        # self.compute_saliency_map(self.input,self.label).show()
-
-        newlayers = {}
-        if self.changed_activations=={}:
-            self.default_loss.zero_grad()
-            return self.default_loss
-
-            
-
-            """
-            this is the correct code, i just want to test something
-            print("the sum of changes is ")
-            print(torch.sum(difference_change).item())
-            weight_value = self.prev_layer_weights[item]*difference_change.squeeze(0).unsqueeze(1)*1000
-            anti_overfitting_constant = weight_value.mean()
-            newlayers[item]= (weight_value-anti_overfitting_constant)
-        
-            """
-        statesdict = self.model.state_dict()
-        image = transforms.ToPILImage()(self.marked_pixels)
-        image.show()
-        prev_layer = None
-        for name, layer in list(self.model.named_children())+[("output",None)]:
-            if name not in self.activations.keys():
-                layer.zero_grad()
-                prev_layer = name + ".weight"
-                print(prev_layer)
-                continue
-            
-
-            # print(f"{name} has the shape {self.activations[name]  .shape} on the activations, {self.changed_activations[name].shape} on the changed activations as well as {self.prev_layer_weights[name].shape} for the weights")
-            difference_change=abs((self.activations[name]-self.changed_activations[name]).squeeze(0).unsqueeze(1)*torch.ones_like(self.prev_layer_weights[name]))#self.prev_layer_weights[name])
-            percentile = (self.marked_pixels_count*3)/self.input.numel()
-            print(f"percentile is {percentile}")
-            limit = torch.quantile(difference_change, percentile).item()
-            # limit = 0.01
-            # self.distribution(difference_change)
-            # print("The limit in this case was "+str(limit)) 
-            difference_change[(difference_change>limit)]=0.0
-            difference_change[(difference_change > 0)] = 1.0
-
-            num_zeros = torch.sum(difference_change == 0.0).item()
-
-            # Find the number of 1s
-            num_ones = torch.sum(difference_change == 1.0).item()
-
-            print(f"Number of 0s: {num_zeros}")
-            print(f"Number of 1s: {num_ones}")
-            # self.layer_factors[name]=difference_change# * self.marked_pixels_count/(self.width*self.height)  
-            # self.layer_factors[name]= difference_change.squeeze(0).unsqueeze(1)
-            weight_value = self.prev_layer_weights[name]*difference_change
-            # print(f"shape is {self.prev_layer_weights[name].shape} or {difference_change.shape}")
-            statesdict[prev_layer]= nn.Parameter(weight_value)
-
-            # old_stuff =getattr(self.model, prev_layer.rstrip(".weight"))
-            # old_weights = setattr(old_stuff, "weight",nn.Parameter(weight_value))
-            # print(old_weights)
-
-            
-
-            # print(weight_value)
-
-
-            # assert old_weights is not weight_value
-            # print(f"i am trying to change {prev_layer} by {num_zeros} zero entries")
-
-            try:
-                layer.zero_grad()
-            except:
-                pass
-            prev_layer = name + ".weight"
-        
-        
-        self.model.load_state_dict(statesdict)
-        new_parameters = self.get_model_params()
-        
-        print(f"The difference between the two models is {self.calculate_parameter_change(old_params=old_parameters,new_params=new_parameters)}")
-
-        # Check for missing and unexpected keys
-        """
-        if missing_keys:
-            print("Missing keys in state_dict:", missing_keys)
-        if unexpected_keys:
-            print("Unexpected keys in state_dict:", unexpected_keys)
-            """
-        self.model.zero_grad()
-        self.saliency = self.compute_saliency_map(self.input, self.label)
-        self.saliency.show()
-        # self.improve_image_attention()
-        self.marked_pixels = None
-
-
-
-
-    def improve_image_attention(self):
-        # self.adjust_model(False)
-        loss = self.am_I_overfitting().item()
-        prev_loss = loss
-        threshold = loss *1.1
-        while loss<= threshold and loss <=prev_loss:
-            # self.adjust_model(True)
-            # self.train_on_image()
-            
-
-            # self.adjust_model(False)
-
-            while True:
-                continue
-            prev_loss = loss
-            loss = self.am_I_overfitting().item()
-        
-    def invert_process_image(self,image_pil):
-        image_np = np.array(image_pil)
-        if len(image_np.shape) == 3 and image_np.shape[2] == 3:  # RGB image
-
-            # Reverse scaling and clipping
-            image_np = np.clip(image_np, 0, 255).astype(np.float32) / 255.0
-            # Reverse mean subtraction and division by standard deviation
-            mean = [0.485, 0.456, 0.406]
-            std = [0.229, 0.224, 0.225]
-            image_np = (image_np - mean) / std
-            return torch.from_numpy(image_np.transpose(2, 0, 1)).float()
-        elif len(image_np.shape) == 2:  # Grayscale image
-            image_np = (image_np / 255).astype(np.float32)
-            return torch.from_numpy((image_np * 255).astype(np.uint8))
-        elif len(image_np.shape) == 3 and image_np.shape[2] == 4:  # RGBA image
-            image_np = (image_np / 255).astype(np.float32)
-            return torch.from_numpy((image_np * 255).astype(np.uint8))
-        else:
-            raise ValueError("Input image must have 2 or 3 dimensions.")
-
-        
     def process_image(self,image):
         
         image_np = image.squeeze().numpy()
@@ -490,75 +232,6 @@ class PunisherLoss(nn.Module):
 
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
-    def adjust_model(self, backwards):
-        print("State is "+str(backwards))
-        print(len(list(self.model.named_parameters())))
-        if not hasattr(self, 'original_layers'):
-            self.original_layers = {}
-        
-        # Get the state_dict of the model
-        state_dict = self.model.state_dict()
-
-        for name, param in self.model.named_children():
-            if name not in self.prev_layer_weights.keys():
-                print(name)
-                continue
-        
-
-            
-            if backwards:
-                print("here it gets to")
-                # Save the current parameter tensor to restore later
-                self.original_layers[name] = param
-                
-                # Modify the parameter tensor
-                modified_param = self.prev_layer_weights[name] * self.layer_factors[name]
-                
-                # Update the state_dict directly
-                state_dict[name] = modified_param
-            else:
-                print("it gets to this point why the fuck does it not work!!!!")
-                # Restore the original parameter tensor
-                state_dict[name] = self.original_layers[name]
-
-        
-        # Load the updated state_dict back into the model
-        self.model.load_state_dict(state_dict)
-
-    def calculate_parameter_change(self, old_params, new_params):
-        total_change = 0
-        for key in old_params.keys():
-            old_param, new_param = old_params[key],new_params[key]
-            change = torch.sum(torch.abs(old_param - new_param)).item()
-            total_change += change
-        return total_change
-
-    def image_difference(self,image1,image2):
-        import imagehash
-        hash1 = imagehash.phash(image1)
-        hash2 = imagehash.phash(image2)
-
-        # Compute hamming distance (lower is more similar)
-        hamming_distance = hash1 - hash2
-        return hamming_distance
-    
-    def train_on_image(self):
-        print("WARNING")
-        weight_loss = 0
-        exploration_loss = 0
-        for name, layer in self.model.named_parameters():
-            if name in self.original_layers.keys():
-                weight_loss += layer.data*self.layer_factors[name]
-                
-            exploration_loss -= torch.sum(layer.data)
-
-
-        output = self.model(self.input)
-        loss = self.default_loss(output, self.target) + weight_loss # exploration_loss*0.1
-        loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
-        
 
 
 
@@ -703,18 +376,8 @@ class PunisherLoss(nn.Module):
                             self.pos_marked_pixels_count += 1
 
                 
-                # self.process_image(newimage).resize((new_width,new_height)).show()
     
-                newimage=newimage.unsqueeze(0)               
-                # drawn_image.show()
-                if self.marked_pixels_count !=0:
-                    self.real = False
-                    # print("for the changed image the size is "+str(newimage.size()))
-                    output = self.model(newimage)
-                    if self.last_layer_linear:
-                        self.changed_activations["output"]=output
-                    self.real = True
-                self.marked_pixels.squeeze(0)
+
                 # self.measure_impact()
                 root.destroy()
                 
@@ -723,12 +386,8 @@ class PunisherLoss(nn.Module):
         close_button = tk.Button(window, text="Continue", command=close_window)
         close_button.place(relx=0.5, rely=0.95, anchor=tk.CENTER)  # Place the button at the bottom center of the window
         root.mainloop()
-        # print(f"Loss is {self.loss.item()} and my added loss is {torch.sum(nn.Sigmoid()(self.gradients)* self.marked_pixels)/torch.sum(self.marked_pixels)}")
-        # return self.loss
         return self
-        # return (torch.sum((self.gradients)* self.marked_pixels))/50 + self.loss
-        # return torch.sum(abs(self.gradients)* self.marked_pixels)
-    
+
     def switch_color(self):
         if self.color == self.red_color:
             self.color = self.green_color
@@ -739,23 +398,12 @@ class PunisherLoss(nn.Module):
     def get_color(self):
         return self.color
     
-    def measure_impact(self):
 
-        if self.marked_pixels is not None:
-            # print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
-            # print(f"Sum of gradients is {torch.sum(self.gradients)}")
-            negative_pixels = torch.clamp(self.marked_pixels,min=0)
-            positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
-            try:
-                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
-                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
-            except:
-                pass
+
     def measure_impact_pixels(self):
 
         if self.marked_pixels is not None:
-            # print(f"Sum of marked pixels is {torch.sum(self.marked_pixels)}")
-            # print(f"Sum of gradients is {torch.sum(self.gradients)}")
+
             self.negative_pixels = torch.clamp(self.marked_pixels,min=0)
             self.positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
             gradients = self.gradients.clone()
@@ -766,20 +414,7 @@ class PunisherLoss(nn.Module):
             except:
                 pass
 
-    # Function to handle forward pass hook
-    def forward_hook(self, module, input, output,name):
-        # Store the output (activation) of the module
-        if self.real:
-            self.activations[name] = output.clone().detach()
-        else:
-            self.changed_activations[name] = output.clone().detach()
 
-    def modelfunction(self,params ,x,target):
-        output = self.fcall(params, x)
-        # print(f"the shape for the fcall output is {output.shape} the real shape is {self.model(x).shape}")
-
-        loss = self.default_loss(output, target)
-        return loss
         
     def compute_saliency_map(self, input_data, label):
         # ImageFile.LOAD_TRUNCATED_IMAGES = False
@@ -870,51 +505,25 @@ class PunisherLoss(nn.Module):
                     normalized_values = (non_zero_values - np.min(non_zero_values)) / (np.max(non_zero_values) - np.min(non_zero_values))
                     safe_saliency_map[i][non_zero_mask] = normalized_values
 
-            # print(safe_saliency_map)
-
-            # Create RGBA array with shape (height, width, 4)
             saliency_map_rgba = np.zeros((safe_saliency_map.shape[1], safe_saliency_map.shape[2], 4), dtype=np.uint8)
             
-            # Calculate green intensity from the second channel of the saliency map
             green_intensity = (np.mean(safe_saliency_map, axis=0) * 255).astype(np.uint8)
             
-            # print(f"Value is {self.hash_value(green_intensity)}")
-            # print(green_intensity)
             alpha_channel = np.full_like(green_intensity, 128)
             
-            # print(green_intensity)
-
-
-            # Set alpha channel to 0 where green intensity is zero
             alpha_channel[green_intensity == 0] = 0
-            # Repeat green_intensity and alpha_channel for each channel
+
             saliency_map_rgba[:, :, 1] = green_intensity
             saliency_map_rgba[:, :, 3] = alpha_channel
             
         
 
-        # Create Pillow image
         saliency_map_pil = Image.fromarray(saliency_map_rgba.copy(), 'RGBA')
 
-        # phash = imagehash.phash(saliency_map_pil, hash_size=16)
-        # print(f"phash is {phash} you potato")
         self.model.train()
-        # print(f"hash is {hash(saliency_map_pil)}")
+
         return saliency_map_pil
     
-    def hash_value(self, value):
-        pickled = pickle.dumps(value)
-        return hashlib.sha256(pickled).hexdigest()
-
-    def get_final_conv_layer(self):
-        # Find the last convolutional layer in the model's architecture
-        final_conv_layer = None
-        modules = list(self.model.modules())  # Get all modules in the model
-        for module in reversed(modules):  # Iterate over modules in reverse order
-            if isinstance(module, nn.Conv2d) or isinstance(module, nn.Conv3d):
-                final_conv_layer = module
-                break  # Stop iteration after finding the first convolutional layer
-        return final_conv_layer
 
 
 class ChoserWindow:
