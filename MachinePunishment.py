@@ -8,7 +8,7 @@ import torch.optim as optim
 
 import numpy as np
 import torch.nn.functional as F
-import torch.nn.functional as func
+
 
 import random
 import hashlib
@@ -16,8 +16,6 @@ import pickle
 import time
 import uuid
 
-
-from torch import vmap
 
 
 import torch.autograd as autograd
@@ -39,10 +37,10 @@ class PunisherLoss(nn.Module):
         self.decide_callback = decide_callback
         self.loss = None
         self.format = None
-        self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
+        # self.jacobian_func = func.jacrev(self.modelfunction, argnums = 1) 
         self.optimizer = optim.SGD(model.parameters(),0.001)
         self.frozen_layers = []
-        self.fcall = lambda params, x: functional_call(self.model, params, x)
+        # self.fcall = lambda params, x: functional_call(self.model, params, x)
         self.marked_pixels = None
         self.real = True
         self.saliency = None
@@ -349,7 +347,7 @@ class PunisherLoss(nn.Module):
         total_params = sum(p.numel() for p in self.model.parameters())
         print(f'Total parameters: {total_params}')
 
-        hessian = func.jacrev(self.jacobian_func,  argnums = 0)
+        # hessian = func.jacrev(self.jacobian_func,  argnums = 0)
 
         # self.target.unsqueeze(0)
         
@@ -361,7 +359,6 @@ class PunisherLoss(nn.Module):
         # weight_gradients = torch.autograd.grad(self.gradients, self.model.parameters(), grad_outputs=torch.ones_like(self.gradients),  create_graph=True)
 
 
-        hessian_per_sample = vmap(hessian, in_dims=(None,0,None))(dict(self.model.named_parameters()), self.input, self.target)
 
         
         for name, param in self.model.named_parameters(): 
@@ -856,26 +853,16 @@ class PunisherLoss(nn.Module):
             if torch.all(param == 0):
                 print(f"Layer {name} has all zero weights.")
 
-        # state_dictionary = self.model.state_dict()
 
         if input_data.grad is not None:
             input_data.grad.zero_()
         
-        # input_data_copy = input_data.clone()
-        # input_data_copy.requires_grad = True
-
-        # Forward pass
-        # outputs = self.model(input_data) 
-        params = dict(self.model.named_parameters())
-        
-        # print(input_data)
+ 
 
         
 
         self.input = input_data
-        # functionalized_model = func.functionalize(self.modelfunction)
-        # outputs = self.fcall(params,input_data)
-        # print(outputs)
+
         outputs = self.model(input_data)
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
@@ -888,65 +875,13 @@ class PunisherLoss(nn.Module):
         for name, param in self.model.named_parameters():
             if torch.all(param == 0):
                 print(f"Layer {name} has all zero weights.")
-        # assert self.loss == functionalized_model(input_data, target)
-        # assert torch.equal(outputs ,self.model.forward(input_data))
-
-                # Check if the operations are performed with torch.no_grad() context
-
-        
-        
-        jacobian_x = self.jacobian_func(params,input_data, target)
-        
-
-        # here i compute the jacobian to have a backpropagatable way to get input.grad
-        # jacobian = autograd.functional.jacobian(lambda x: self.default_loss(self.model.forward(x), target), input_data)
 
 
-        # self.gradients = torch.abs(torch.matmul(jacobian_x, torch.ones_like(input_data)))        # print(jacobian_x)
-
-
-        # Backpropagate to compute gradients with respect to the output
-        # self.loss.backward(retain_graph=True)
-
-        
-        # Get the gradients with respect to the input
-        
-        # assert input_data_copy.grad_fn is not None, "input data  were not part of graph"
-
-        # self.gradients = input_data.grad# .detach()
-
-
-        # assert self.gradients.shape == gradients.shape
-
-        """
-        diff = torch.abs(self.gradients - gradients)
-
-        # Compute the average difference
-        avg_diff = torch.mean(diff)
-
-        avg_val = (torch.mean(self.gradients)+torch.mean(gradients))/2
-
-        print(f"Average difference as percentage of actual values is {avg_diff/avg_val}")"""
-
-        # assert torch.equal(self.gradients, gradients)
-
-        # assert self.gradients.grad_fn is not None, "gradients were not part of graph after cloning"
-
-        # self.gradients.requires_grad = True
-
-        # self.measure_impact()
-
-        # self.gradients[self.gradients < 0] = 0
-
-        # Compute the importance weights based on gradients
-
-        # gradients = self.gradients
 
         gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True)[0])
 
         self.gradients = gradients
 
-        # print(self.gradients)
         for param in self.model.parameters():
             if param.grad is not None:
                 param.grad.zero_()
@@ -955,14 +890,10 @@ class PunisherLoss(nn.Module):
 
         saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
 
-        # Apply logarithmic scaling to enhance contrast
         saliency_map_numpy = np.log1p(saliency_map_numpy)
-        saliency_map_numpy = (saliency_map_numpy / np.log1p(max_grad)) * 255
-        # saliency_map_numpy = saliency_map_numpy.astype(np.uint8)
+
         
 
-        # assert self.gradients.grad_fn is not None, "gradients were not part of graph after numpy operation"
-        # saliency_map_numpy = (saliency_map_numpy - np.min(saliency_map_numpy)) / (np.max(saliency_map_numpy) - np.min(saliency_map_numpy))
         if len(saliency_map_numpy.shape) == 2:
 
             saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
