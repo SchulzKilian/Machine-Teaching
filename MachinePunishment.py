@@ -5,11 +5,11 @@ from PIL import Image, ImageTk, ImageDraw, ImageFile
 import tkinter as tk
 import matplotlib.pyplot as plt
 import torch.optim as optim
-import imagehash
+
 import numpy as np
 import torch.nn.functional as F
-import torch.func as func
-from torch.func import functional_call
+import torch.nn.functional as func
+
 import random
 import hashlib
 import pickle
@@ -22,11 +22,7 @@ from torch import vmap
 
 import torch.autograd as autograd
 import enum
-class Mode(enum.Enum):
-    NUKE = 'nuke'
-    ADJUST = 'adjust'
-    LOSS = 'loss'
-    SCALE_UP = 'scale_up'
+
 
 
 
@@ -37,7 +33,7 @@ class Mode(enum.Enum):
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
     green_color = "#00FF01"
-    def __init__(self, threshold: int, training_dataset, model, decide_callback, default_loss = None, mode = Mode.SCALE_UP):
+    def __init__(self, threshold: int, training_dataset, model, decide_callback, default_loss = None):
         super(PunisherLoss, self).__init__()
         self.threshold = threshold
         self.decide_callback = decide_callback
@@ -51,7 +47,6 @@ class PunisherLoss(nn.Module):
         self.real = True
         self.saliency = None
         self.input = None
-        self.mode = mode
         self.validation_set = self.create_validation_set(training_dataset,100)
         self.label = None
         self.last_layer_linear=False
