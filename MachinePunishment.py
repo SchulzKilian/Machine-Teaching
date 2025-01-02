@@ -1,25 +1,19 @@
 import torch
 import torch.nn as nn
-from torchvision import transforms
-from PIL import Image, ImageTk, ImageDraw, ImageFile
+from PIL import Image, ImageTk, ImageDraw
 import tkinter as tk
 import matplotlib.pyplot as plt
 import torch.optim as optim
 
 import numpy as np
 import torch.nn.functional as F
-
-
+from ChoserWindow import ChoserWindow
 import random
-import hashlib
-import pickle
+
 import time
-import uuid
 
 
 
-import torch.autograd as autograd
-import enum
 
 
 
@@ -197,7 +191,15 @@ class PunisherLoss(nn.Module):
 
         # self.show_gradients()
         
-
+    def adjust_weights_according_grad(self):
+        for name, param in self.model.named_parameters():
+            if name.startswith("conv") and False:
+                continue
+            if param.grad is not None:
+                torch.nn.utils.clip_grad_value_(param, clip_value=1.0)
+                param.data = param.data - param.grad* 0.001
+                param.grad.zero_()
+    
 
 
     def process_image(self,image):
@@ -417,7 +419,7 @@ class PunisherLoss(nn.Module):
 
         
     def compute_saliency_map(self, input_data, label):
-        # ImageFile.LOAD_TRUNCATED_IMAGES = False
+
 
         self.model.eval()  # Set the model to evaluation mode
         input_data.requires_grad_() # Set requires_grad to True to compute gradients
@@ -524,72 +526,3 @@ class PunisherLoss(nn.Module):
 
         return saliency_map_pil
     
-
-
-class ChoserWindow:
-    def __init__(self, image1, image1_text, image2, image2_text):
-        self.root = tk.Tk()
-        self.root.title("Image Window")
-        self.root.geometry("1600x900")  # Set the window size to accommodate two images side by side
-
-        self.image1 = image1
-        self.image1_text = image1_text
-        self.image2 = image2
-        self.image2_text = image2_text
-        
-        self.blended_image_tk1 = None
-        self.blended_image_tk2 = None
-        
-        self.selection = None
-        
-        self.frame = tk.Frame(self.root)
-        self.frame.pack(fill=tk.BOTH, expand=True)
-
-        self.canvas1 = tk.Canvas(self.frame, bg="white")
-        self.canvas1.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        self.canvas2 = tk.Canvas(self.frame, bg="white")
-        self.canvas2.pack(side=tk.LEFT, padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        self.label1 = tk.Label(self.root, text=self.image1_text, font=("Helvetica", 16))
-        self.label1.pack(side=tk.LEFT, padx=10, pady=10)
-
-        self.label2 = tk.Label(self.root, text=self.image2_text, font=("Helvetica", 16))
-        self.label2.pack(side=tk.LEFT, padx=10, pady=10)
-
-        self.root.update_idletasks()
-        self.display_images()
-
-        self.canvas1.bind("<Button-1>", lambda event: self.on_image_click(False))
-        self.canvas2.bind("<Button-1>", lambda event: self.on_image_click(True))
-
-    def display_images(self):
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-
-        # Example: assuming blended_image1 and blended_image2 are Image objects
-        blended_image1 = self.blend_images(self.image1)
-        blended_image2 = self.blend_images(self.image2)
-
-        self.blended_image_tk1 = ImageTk.PhotoImage(blended_image1.resize((width // 2, height)))
-        self.blended_image_tk2 = ImageTk.PhotoImage(blended_image2.resize((width // 2, height)))
-
-        self.display_image(self.blended_image_tk1, self.canvas1)
-        self.display_image(self.blended_image_tk2, self.canvas2)
-
-    def blend_images(self, image):
-        # Example function to blend an image (replace with your own logic)
-        return image
-
-    def display_image(self, image_tk, canvas):
-        canvas.delete("all")
-        canvas.create_image(0, 0, anchor=tk.NW, image=image_tk)
-
-    def on_image_click(self, selection):
-        self.selection = selection
-        self.root.quit()
-        self.root.destroy()  # Ensure the window is destroyed after quitting the main loop
-
-    def run(self):
-        self.root.mainloop()
-        return self.selection
