@@ -15,31 +15,18 @@ import time
 
 
 
-
-
-
-
-
-
-
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
     green_color = "#00FF01"
     def __init__(self, training_dataset, model, decide_callback, default_loss = None):
         super(PunisherLoss, self).__init__()
-
         self.decide_callback = decide_callback
         self.loss = None
-        self.format = None
-        self.optimizer = optim.SGD(model.parameters(),0.001)
         self.marked_pixels = None
-        self.real = True
         self.saliency = None
         self.input = None
         self.validation_set = self.create_validation_set(training_dataset,100)
         self.label = None
-        self.changed_activations= {}
-        self.layer_factors = {}
         self.original_layers = {}
         self.model = model
         self.radius = 15
@@ -58,7 +45,7 @@ class PunisherLoss(nn.Module):
     def forward(self, inputs, targets, epoch, number):
         print(epoch)
         if self.decide_callback(epoch,number):
-            return self.custom_loss_function(inputs, targets, self.training_dataset)
+            return self.custom_loss_function(self.training_dataset)
 
         
         else:
@@ -78,13 +65,11 @@ class PunisherLoss(nn.Module):
 
 
     def setradius(self, radius):
-        print("radius is used")
         self.radius = radius
 
 
 
     def slider_changed(self, value):
-        print("slider used")
         radius = int(value)
         self.setradius(radius)
 
@@ -164,19 +149,14 @@ class PunisherLoss(nn.Module):
             print(loss.item())
             print(real_loss.item())
 
-
-
-        
         self.measure_impact_pixels()
-        # self.zero_weights_with_non_zero_gradients("conv")
-        # self.zero_weights_with_non_zero_gradients()
         self.adjust_weights_according_grad()
         self.zero_grads()
         
         validation2 = self.am_I_overfitting().item()
 
         saliency2 = self.compute_saliency_map(self.input,self.label) 
-        print("important it is "+str(torch.sum(self.marked_pixels*self.gradients)))
+
         self.measure_impact_pixels()
         image_window = ChoserWindow(saliency1, f"Original Model, loss {validation1}", saliency2, f"Modified Model, loss {validation2}")
         blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
@@ -205,30 +185,27 @@ class PunisherLoss(nn.Module):
     def process_image(self,image):
         
         image_np = image.squeeze().numpy()
-        # image_np = image.squeeze().detach().numpy()
-
 
         if len(image_np.shape) == 2:  # Grayscale image
 
             image_np = (image_np * 255).astype(np.uint8)
-            image_pil = Image.fromarray(image_np, 'L')
+
         elif len(image_np.shape) == 3: 
             if image_np.shape[0] == 3:
                 # Convert from CxHxW to HxWxC
                 image_np = np.transpose(image_np, (1, 2, 0))
                 image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
                 image_np = np.clip(image_np, 0, 255).astype(np.uint8)
-                image_pil = Image.fromarray(image_np, 'RGB')
+
             elif image_np.shape[2] == 3:
                 image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
                 image_np = np.clip(image_np, 0, 255).astype(np.uint8)
-                image_pil = Image.fromarray(image_np)
+
 
         elif len(image_np.shape) == 4 and image_np.shape[0] == 4:  # RGBA image
-            # Unnormalize the RGBA image
+ 
             image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
-            # Convert the NumPy array to an RGBA PIL Image
-            image_pil = Image.fromarray(image_np, 'RGBA') 
+
         else:
             raise ValueError("Input image must have 2 or 3 dimensions.")
 
@@ -248,7 +225,7 @@ class PunisherLoss(nn.Module):
 
 
 
-    def custom_loss_function(self, inputs, targets, training_dataset, amount=1):
+    def custom_loss_function(self, training_dataset, amount=1):
         root = tk.Tk()
         root.title("Mark Pixels")
 
@@ -427,9 +404,6 @@ class PunisherLoss(nn.Module):
         for param in self.model.parameters():
             param.requires_grad_()
 
-        for name, param in self.model.named_parameters():
-            if torch.all(param == 0):
-                print(f"Layer {name} has all zero weights.")
 
 
         if input_data.grad is not None:
