@@ -18,7 +18,7 @@ import time
 class PunisherLoss(nn.Module):
     red_color = "#FF0001"
     green_color = "#00FF01"
-    def __init__(self, training_dataset, model, decide_callback, default_loss = None):
+    def __init__(self, training_dataset, model, decide_callback, default_loss = None, optimizer = None):
         super(PunisherLoss, self).__init__()
         self.decide_callback = decide_callback
         self.loss = None
@@ -35,6 +35,10 @@ class PunisherLoss(nn.Module):
             self.default_loss = nn.CrossEntropyLoss()
         else:
             self.default_loss = default_loss
+        if not optimizer:
+            self.optimizer = optim.Adam(self.model.parameters())
+        else:
+            self.optimizer = optimizer
 
 
 
@@ -120,8 +124,10 @@ class PunisherLoss(nn.Module):
             positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             epochs.append(epoch)
+            self.optimizer.zero_grad()
             loss.backward()
-            self.adjust_weights_according_grad()
+            self.optimizer.step()
+            # self.adjust_weights_according_grad()
             validation_losses.append(current_loss)
             current_loss = self.am_I_overfitting().item()
             epoch +=1
@@ -163,13 +169,11 @@ class PunisherLoss(nn.Module):
         
         blended_image.show()
         update = image_window.run()
-        print(f"update it {update}")
         if not update:
             self.model.load_state_dict(old_model)
             
         self.zero_grads()
 
-        # self.show_gradients()
         
     def adjust_weights_according_grad(self):
         for name, param in self.model.named_parameters():
@@ -218,7 +222,6 @@ class PunisherLoss(nn.Module):
         self.model.eval()
         outputs = self.model(self.validation_set[0])
         loss = self.default_loss(outputs,self.validation_set[1])
-        # print("the current loss is "+str(loss.item()))
         self.model.train()
         return loss
 
