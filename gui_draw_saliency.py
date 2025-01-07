@@ -15,6 +15,39 @@ class SaliencyMapDrawer:
     def slider_changed(self, value):
         self.radius = int(value)
 
+
+    def create_saliency_map_image(self, gradients):
+        """Converts raw gradients into a PIL Image saliency map"""
+        max_grad = gradients.max().detach()
+        normalized_gradients = normalized_gradients.clone().detach() / (max_grad + 1e-8)
+        saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
+        saliency_map_numpy = np.log1p(saliency_map_numpy)
+
+        if len(saliency_map_numpy.shape) == 2:
+            saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy.copy(), nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
+            
+            green_intensity = (safe_saliency_map * 255).astype(np.uint8)
+            alpha_channel = np.full_like(green_intensity, 128)
+            alpha_channel[green_intensity == 0] = 0
+            
+            saliency_map_rgba[:, :, 1] = green_intensity
+            saliency_map_rgba[:, :, 3] = alpha_channel
+        else:
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
+            
+            saliency_map_rgba = np.zeros((safe_saliency_map.shape[1], safe_saliency_map.shape[2], 4), dtype=np.uint8)
+            green_intensity = (np.mean(safe_saliency_map, axis=0) * 255).astype(np.uint8)
+            alpha_channel = np.full_like(green_intensity, 128)
+            alpha_channel[green_intensity == 0] = 0
+            
+            saliency_map_rgba[:, :, 1] = green_intensity
+            saliency_map_rgba[:, :, 3] = alpha_channel
+
+        return Image.fromarray(saliency_map_rgba, 'RGBA')
+
     def switch_color(self):
         if self.color == self.red_color:
             self.color = self.green_color
@@ -55,7 +88,7 @@ class SaliencyMapDrawer:
         return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
 
-    def get_user_markings(self, image, saliency_map, scaling_factor=1):
+    def get_user_markings(self, image, gradients, scaling_factor=1):
         root = tk.Tk()
         root.title("Mark Pixels")
         
@@ -63,6 +96,7 @@ class SaliencyMapDrawer:
         window.title("Mark Pixels")
         window.geometry("800x800")
 
+        saliency_map = self.create_saliency_map_image(gradients)
         image_pil = self.process_image(image)
 
         canvas = tk.Canvas(window, bg="white")
