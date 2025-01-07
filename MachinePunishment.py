@@ -29,7 +29,6 @@ class PunisherLoss(nn.Module):
         self.label = None
         self.original_layers = {}
         self.model = model
-        self.radius = 15
         self.training_dataset = training_dataset
         if not default_loss:
             self.default_loss = nn.CrossEntropyLoss()
@@ -70,16 +69,6 @@ class PunisherLoss(nn.Module):
 
 
 
-    def setradius(self, radius):
-        self.radius = radius
-
-
-
-    def slider_changed(self, value):
-        radius = int(value)
-        self.setradius(radius)
-
-
 
 
 
@@ -105,7 +94,7 @@ class PunisherLoss(nn.Module):
         self.marked_pixels.requires_grad = True
         self.zero_grads()
         validation1 = self.am_I_overfitting().item()
-        saliency1 = self.compute_saliency_map(self.input,self.label) 
+        saliency1 = self.compute_saliency_gradients()
         validation_loss= self.am_I_overfitting().item()
         current_loss = validation_loss
         real_loss = self.getloss("classic")
@@ -134,7 +123,7 @@ class PunisherLoss(nn.Module):
             epoch +=1
             loss = self.getloss("classic")
             self.optimizer.zero_grad()
-            _ = self.compute_saliency_map(self.input, self.label)
+            _ = self.compute_saliency_gradients()
             
             
         print(f"loss is {validation_loss}")
@@ -200,9 +189,8 @@ class PunisherLoss(nn.Module):
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             image, label = training_dataset[idx]
             
-            saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
-            
-            result = self.saliency_drawer.get_user_markings(image, saliency_map)
+            self.compute_saliency_gradients(image.unsqueeze(0), label)
+            result = self.saliency_drawer.get_user_markings(image, gradients=self.gradients)
             
             self.marked_pixels = result["marked_pixels"]
             self.marked_pixels_count = result["neg_count"]
@@ -226,8 +214,21 @@ class PunisherLoss(nn.Module):
             except:
                 pass
 
-    def compute_saliency_gradients(self, input_data, label):
+    def compute_saliency_gradients(self, input_data= None, label= None):
+
+
         """Computes and returns the raw gradients"""
+
+        if input_data is None:
+            input_data = self.input
+        else:
+            self.input = input_data
+
+        if label is None:
+            label = self.label
+        else:
+            self.label = label
+
         self.model.eval()
         input_data.requires_grad_()
         
@@ -239,12 +240,12 @@ class PunisherLoss(nn.Module):
         target[0][label] = 1.0
         
         loss = self.default_loss(outputs, target)
-        gradients = torch.abs(torch.autograd.grad(loss, input_data, create_graph=True, retain_graph=True)[0])
+        self.gradients = torch.abs(torch.autograd.grad(loss, input_data, create_graph=True, retain_graph=True)[0])
         
         
         
         self.model.train()
-        return gradients
+        return self.gradients
         
     def compute_saliency_map(self, input_data, label):
 
