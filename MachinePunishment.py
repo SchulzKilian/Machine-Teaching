@@ -1,33 +1,28 @@
 import torch
 import torch.nn as nn
-from PIL import Image, ImageTk, ImageDraw
-import tkinter as tk
-import matplotlib.pyplot as plt
+from PIL import Image
+
 import torch.optim as optim
-from SaliencyDrawer import SaliencyMapDrawer
+
 import numpy as np
-import torch.nn.functional as F
-from ChoserWindow import ChoserWindow
-import random
-from ProgressPlotter import TrainingProgressPlotter
+
+from GUI import SaliencyMapDrawer, ChoserWindow, TrainingProgressPlotter
+
 import time
 torch.autograd.set_detect_anomaly(True)
 
 
 
 class PunisherLoss(nn.Module):
-    red_color = "#FF0001"
-    green_color = "#00FF01"
+
     def __init__(self, training_dataset, model, decide_callback, default_loss = None, optimizer = None):
         super(PunisherLoss, self).__init__()
         self.decide_callback = decide_callback
         self.loss = None
         self.marked_pixels = None
-        self.saliency = None
         self.input = None
         self.validation_set = self.create_validation_set(training_dataset,100)
         self.label = None
-        self.original_layers = {}
         self.model = model
         self.training_dataset = training_dataset
         if not default_loss:
@@ -116,7 +111,6 @@ class PunisherLoss(nn.Module):
             # self.optimizer.zero_grad()
             print(loss.item())
             loss.backward(retain_graph=True)
-            # self.optimizer.step()
             self.adjust_weights_according_grad()
             validation_losses.append(current_loss)
             current_loss = self.am_I_overfitting().item()
@@ -131,14 +125,7 @@ class PunisherLoss(nn.Module):
         self.measure_impact_pixels()
         plotter = TrainingProgressPlotter()
         plotter.plot_percentages(epochs, negative_percentage, positive_percentage)
-        plt.show()
-        if not current_loss < validation_loss*2:
-            print("it went out for the validation loss")
-        
-        if not loss.item()  > real_loss.item()-abs(real_loss.item()/2):
-            print("it went out for the custom loss")
-            print(loss.item())
-            print(real_loss.item())
+
 
         self.measure_impact_pixels()
         self.adjust_weights_according_grad()
@@ -169,7 +156,7 @@ class PunisherLoss(nn.Module):
 
 
     def am_I_overfitting(self):
-        return torch.tensor(0.18)
+
         self.model.eval()
         outputs = self.model(self.validation_set[0])
         loss = self.default_loss(outputs,self.validation_set[1])
@@ -206,9 +193,6 @@ class PunisherLoss(nn.Module):
                 pass
 
     def compute_saliency_gradients(self, input_data= None, label= None):
-
-
-        """Computes and returns the raw gradients"""
 
         if input_data is None:
             input_data = self.input
