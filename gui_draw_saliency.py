@@ -19,7 +19,7 @@ class SaliencyMapDrawer:
     def create_saliency_map_image(self, gradients):
         """Converts raw gradients into a PIL Image saliency map"""
         max_grad = gradients.max().detach()
-        normalized_gradients = normalized_gradients.clone().detach() / (max_grad + 1e-8)
+        normalized_gradients = gradients.clone().detach() / (max_grad + 1e-8)
         saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
         saliency_map_numpy = np.log1p(saliency_map_numpy)
 
