@@ -4,14 +4,14 @@ from PIL import Image, ImageTk, ImageDraw
 import tkinter as tk
 import matplotlib.pyplot as plt
 import torch.optim as optim
-
+from gui_draw_saliency import SaliencyMapDrawer
 import numpy as np
 import torch.nn.functional as F
 from ChoserWindow import ChoserWindow
 import random
 
 import time
-
+torch.autograd.set_detect_anomaly(True)
 
 
 
@@ -36,9 +36,11 @@ class PunisherLoss(nn.Module):
         else:
             self.default_loss = default_loss
         if not optimizer:
-            self.optimizer = optim.Adam(self.model.parameters())
+            self.optimizer = optim.Adam(self.model.parameters(), lr = 0.01)
         else:
             self.optimizer = optimizer
+        
+        self.saliency_drawer = SaliencyMapDrawer()
 
 
 
@@ -110,7 +112,6 @@ class PunisherLoss(nn.Module):
         loss = real_loss
         start_time = time.time()
         max_duration = 300
-
         positive_percentage = []
         negative_percentage = []
         validation_losses = []
@@ -119,19 +120,23 @@ class PunisherLoss(nn.Module):
         self.measure_impact_pixels()
         print(f"loss is {validation_loss}")
         while current_loss < validation_loss*1.2 and (loss.item()  > real_loss.item()-abs(real_loss.item()/2) or True) and time.time() - start_time < max_duration:
-
-            _ = self.compute_saliency_map(self.input, self.label)
+            
             positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
             epochs.append(epoch)
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            # self.adjust_weights_according_grad()
+            # self.optimizer.zero_grad()
+            print(loss.item())
+            loss.backward(retain_graph=True)
+            # self.optimizer.step()
+            self.adjust_weights_according_grad()
             validation_losses.append(current_loss)
             current_loss = self.am_I_overfitting().item()
             epoch +=1
             loss = self.getloss("classic")
+            self.optimizer.zero_grad()
+            _ = self.compute_saliency_map(self.input, self.label)
+            
+            
         print(f"loss is {validation_loss}")
         saliency2 = self.compute_saliency_map(self.input,self.label).show()
         self.measure_impact_pixels()
@@ -176,59 +181,38 @@ class PunisherLoss(nn.Module):
 
         
     def adjust_weights_according_grad(self):
-        for name, param in self.model.named_parameters():
-            if name.startswith("conv") and False:
-                continue
-            if param.grad is not None:
-                torch.nn.utils.clip_grad_value_(param, clip_value=1.0)
-                param.data = param.data - param.grad* 0.001
-                param.grad.zero_()
+        self.optimizer.step()
     
 
-
-    def process_image(self,image):
-        
-        image_np = image.squeeze().numpy()
-
-        if len(image_np.shape) == 2:  # Grayscale image
-
-            image_np = (image_np * 255).astype(np.uint8)
-
-        elif len(image_np.shape) == 3: 
-            if image_np.shape[0] == 3:
-                # Convert from CxHxW to HxWxC
-                image_np = np.transpose(image_np, (1, 2, 0))
-                image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
-                image_np = np.clip(image_np, 0, 255).astype(np.uint8)
-
-            elif image_np.shape[2] == 3:
-                image_np = (image_np * [0.229, 0.224, 0.225] + [0.485, 0.456, 0.406]) * 255
-                image_np = np.clip(image_np, 0, 255).astype(np.uint8)
-
-
-        elif len(image_np.shape) == 4 and image_np.shape[0] == 4:  # RGBA image
- 
-            image_np = (image_np.transpose(1, 2, 0) * 255).astype(np.uint8)
-
-        else:
-            raise ValueError("Input image must have 2 or 3 dimensions.")
-
-        return Image.fromarray(image_np.astype(np.uint8)).convert('RGB')
 
 
 
 
     def am_I_overfitting(self):
+        return torch.tensor(0.18)
         self.model.eval()
         outputs = self.model(self.validation_set[0])
         loss = self.default_loss(outputs,self.validation_set[1])
         self.model.train()
         return loss
 
-
-
-
     def custom_loss_function(self, training_dataset, amount=1):
+        for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
+            image, label = training_dataset[idx]
+            
+            saliency_map = self.compute_saliency_map(image.unsqueeze(0), label)
+            
+            result = self.saliency_drawer.get_user_markings(image, saliency_map)
+            
+            self.marked_pixels = result["marked_pixels"]
+            self.marked_pixels_count = result["neg_count"]
+            self.pos_marked_pixels_count = result["pos_count"]
+
+        return self
+
+
+    def old_custom_loss_function(self, training_dataset, amount=1):
+        """
         root = tk.Tk()
         root.title("Mark Pixels")
 
@@ -380,7 +364,8 @@ class PunisherLoss(nn.Module):
     def get_color(self):
         return self.color
     
-
+"""
+        pass
 
     def measure_impact_pixels(self):
 
@@ -422,26 +407,23 @@ class PunisherLoss(nn.Module):
         target = torch.zeros(outputs.size(), dtype=torch.float)
         target[0][label] = 1.0
         self.target = target
-        outputs = self.model(input_data)
+        # outputs = self.model(input_data)
         self.loss = self.default_loss(outputs, target)
 
 
 
-        for name, param in self.model.named_parameters():
-            if torch.all(param == 0):
-                print(f"Layer {name} has all zero weights.")
+        gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True, retain_graph=True)[0])
 
-
-
-        gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True)[0])
+        # gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True, retain_graph=True)[0])
 
         self.gradients = gradients
 
         for param in self.model.parameters():
             if param.grad is not None:
+                continue
                 param.grad.zero_()
         max_grad = gradients.max().detach()
-        normalized_gradients = gradients / (max_grad + 1e-8) 
+        normalized_gradients = gradients.clone().detach() / (max_grad + 1e-8) 
 
         saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
 
@@ -503,3 +485,6 @@ class PunisherLoss(nn.Module):
 
         return saliency_map_pil
     
+
+
+

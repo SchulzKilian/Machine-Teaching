@@ -135,7 +135,7 @@ def decide_callback(epoch, number):
 models = [SimplestCNN(classes,channels), ]
 for model in models:
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(train_dataset,model, decide_callback)
+    criterion = PunisherLoss(train_dataset,model, decide_callback, optimizer=optimizer)
     # criterion = nn.CrossEntropyLoss()
     model.train_model(train_loader, criterion, optimizer, num_epochs)
 
