@@ -4,12 +4,12 @@ from PIL import Image, ImageTk, ImageDraw
 import tkinter as tk
 import matplotlib.pyplot as plt
 import torch.optim as optim
-from gui_draw_saliency import SaliencyMapDrawer
+from SaliencyDrawer import SaliencyMapDrawer
 import numpy as np
 import torch.nn.functional as F
 from ChoserWindow import ChoserWindow
 import random
-
+from ProgressPlotter import TrainingProgressPlotter
 import time
 torch.autograd.set_detect_anomaly(True)
 
@@ -127,19 +127,10 @@ class PunisherLoss(nn.Module):
             
             
         print(f"loss is {validation_loss}")
-        saliency2 = self.compute_saliency_map(self.input,self.label).show()
+        # saliency2 = self.compute_saliency_map(self.input,self.label).show()
         self.measure_impact_pixels()
-        plt.figure(figsize=(10, 6))
-        plt.plot(epochs, negative_percentage, marker='o', label='Percentage Negative')
-        plt.plot(epochs, positive_percentage, marker='s', label='Percentage Positive')
-        # plt.plot(epochs, validation_losses, marker='^', label='Validation')
-
-        plt.title('Development Model')
-        plt.xlabel('Epoch')
-        plt.ylabel('')
-        plt.legend()
-        plt.grid(True)
-
+        plotter = TrainingProgressPlotter()
+        plotter.plot_percentages(epochs, negative_percentage, positive_percentage)
         plt.show()
         if not current_loss < validation_loss*2:
             print("it went out for the validation loss")
@@ -155,7 +146,7 @@ class PunisherLoss(nn.Module):
         
         validation2 = self.am_I_overfitting().item()
 
-        saliency2 = self.compute_saliency_map(self.input,self.label) 
+        saliency2 = self.compute_saliency_gradients() 
 
         self.measure_impact_pixels()
         image_window = ChoserWindow(saliency1, f"Original Model, loss {validation1}", saliency2, f"Modified Model, loss {validation2}")
@@ -206,11 +197,11 @@ class PunisherLoss(nn.Module):
 
             self.negative_pixels = torch.clamp(self.marked_pixels,min=0)
             self.positive_pixels = abs(torch.clamp(self.marked_pixels, max = 0))
-            gradients = self.gradients.clone()
+            gradients = self.gradients.clone().detach()
             gradients[gradients!=0]= 1
             try:
-                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
-                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())}")
+                print(f"The weights that contributed to the negatively marked pixels now make up {str(torch.sum(self.negative_pixels*gradients).item()/torch.sum(gradients).item())}")
+                print(f"The weights that contributed to the positively marked pixels now make up {str(torch.sum(self.positive_pixels*gradients).item()/torch.sum(gradients).item())}")
             except:
                 pass
 
@@ -247,108 +238,3 @@ class PunisherLoss(nn.Module):
         self.model.train()
         return self.gradients
         
-    def compute_saliency_map(self, input_data, label):
-
-
-        self.model.eval()  # Set the model to evaluation mode
-        input_data.requires_grad_() # Set requires_grad to True to compute gradients
-        self.label = label
-        for param in self.model.parameters():
-            param.requires_grad_()
-
-
-
-        if input_data.grad is not None:
-            input_data.grad.zero_()
-        
- 
-
-        
-
-        self.input = input_data
-
-        outputs = self.model(input_data)
-        target = torch.zeros(outputs.size(), dtype=torch.float)
-        target[0][label] = 1.0
-        self.target = target
-        # outputs = self.model(input_data)
-        self.loss = self.default_loss(outputs, target)
-
-
-
-        gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True, retain_graph=True)[0])
-
-        # gradients = torch.abs(torch.autograd.grad(self.loss, input_data, create_graph=True, retain_graph=True)[0])
-
-        self.gradients = gradients
-
-        for param in self.model.parameters():
-            if param.grad is not None:
-                continue
-                param.grad.zero_()
-        max_grad = gradients.max().detach()
-        normalized_gradients = gradients.clone().detach() / (max_grad + 1e-8) 
-
-        saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
-
-        saliency_map_numpy = np.log1p(saliency_map_numpy)
-
-        
-
-        if len(saliency_map_numpy.shape) == 2:
-
-            saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
-            safe_saliency_map = np.nan_to_num(saliency_map_numpy.copy(), nan=0.0, posinf=1.0, neginf=0.0)
-            safe_saliency_map = np.clip(safe_saliency_map,0,1)
-            for i in range(safe_saliency_map.shape[0]):
-                non_zero_mask = safe_saliency_map[i] != 0
-                if np.any(non_zero_mask):
-                    non_zero_values = safe_saliency_map[i][non_zero_mask]
-                    normalized_values = (non_zero_values - np.min(non_zero_values)) / (np.max(non_zero_values) - np.min(non_zero_values))
-                    safe_saliency_map[i][non_zero_mask] = normalized_values
-            # safe_saliency_map = np.clip(saliency_map_numpy, 0, 1)
-            green_intensity = (safe_saliency_map * 255).astype(np.uint8)
-            # print(green_intensity)
-            alpha_channel = np.full_like(green_intensity, 128)
-            # Set alpha channel to 0 where green intensity is zero
-            alpha_channel[green_intensity == 0] = 0
-            saliency_map_rgba[:, :, 1] = green_intensity
-            saliency_map_rgba[:, :, 3] = alpha_channel
-        elif len(saliency_map_numpy.shape) == 3:
-            
-            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
-
-            # Clip values to the expected range (0 to 1)
-            safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
-            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
-
-
-            for i in range(safe_saliency_map.shape[0]):
-                non_zero_mask = safe_saliency_map[i] != 0
-                if np.any(non_zero_mask):
-                    non_zero_values = safe_saliency_map[i][non_zero_mask]
-                    normalized_values = (non_zero_values - np.min(non_zero_values)) / (np.max(non_zero_values) - np.min(non_zero_values))
-                    safe_saliency_map[i][non_zero_mask] = normalized_values
-
-            saliency_map_rgba = np.zeros((safe_saliency_map.shape[1], safe_saliency_map.shape[2], 4), dtype=np.uint8)
-            
-            green_intensity = (np.mean(safe_saliency_map, axis=0) * 255).astype(np.uint8)
-            
-            alpha_channel = np.full_like(green_intensity, 128)
-            
-            alpha_channel[green_intensity == 0] = 0
-
-            saliency_map_rgba[:, :, 1] = green_intensity
-            saliency_map_rgba[:, :, 3] = alpha_channel
-            
-        
-
-        saliency_map_pil = Image.fromarray(saliency_map_rgba.copy(), 'RGBA')
-
-        self.model.train()
-
-        return saliency_map_pil
-    
-
-
-
