@@ -87,27 +87,23 @@ class PunisherLoss(nn.Module):
             return
         old_model = self.model.state_dict()
         self.marked_pixels.requires_grad = True
-        self.zero_grads()
+        # self.zero_grads()
         validation1 = self.am_I_overfitting().item()
         saliency1 = self.compute_saliency_gradients()
-        validation_loss= self.am_I_overfitting().item()
-        current_loss = validation_loss
+        current_loss = validation1
         real_loss = self.getloss("classic")
-        loss = real_loss
-        start_time = time.time()
-        max_duration = 300
-        positive_percentage = []
-        negative_percentage = []
-        validation_losses = []
-        epochs = []
+        self.start_time = time.time()
+        self.max_duration = 300
+        self.positive_percentage = []
+        self.negative_percentage = []
+        self.validation_losses = []
+        self.epochs = []
         epoch = 0
         self.measure_impact_pixels()
-        print(f"loss is {validation_loss}")
-        while current_loss < validation_loss*1.2 and (loss.item()  > real_loss.item()-abs(real_loss.item()/2) or True) and time.time() - start_time < max_duration:
+        while self.stop_condition()
             
-            positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
-            negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
-            epochs.append(epoch)
+
+            self.epochs.append(epoch)
             # self.optimizer.zero_grad()
             print(loss.item())
             loss.backward(retain_graph=True)
@@ -120,11 +116,11 @@ class PunisherLoss(nn.Module):
             _ = self.compute_saliency_gradients()
             
             
-        print(f"loss is {validation_loss}")
+
         # saliency2 = self.compute_saliency_map(self.input,self.label).show()
         self.measure_impact_pixels()
         plotter = TrainingProgressPlotter()
-        plotter.plot_percentages(epochs, negative_percentage, positive_percentage)
+        plotter.plot_percentages(self.epochs, self.negative_percentage, self.positive_percentage)
 
 
         self.measure_impact_pixels()
@@ -221,4 +217,18 @@ class PunisherLoss(nn.Module):
         
         self.model.train()
         return self.gradients
+    
+
+
+    def stop_condition(self):
+        loss = self.am_I_overfitting()
+        print(loss.item())
+        self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
+        self.negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
+
+
+
+        condition = time.time() - self.start_time < self.max_duration
+        return condition
+
         
