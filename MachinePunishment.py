@@ -88,51 +88,38 @@ class PunisherLoss(nn.Module):
         old_model = self.model.state_dict()
         self.marked_pixels.requires_grad = True
         # self.zero_grads()
-        validation1 = self.am_I_overfitting().item()
+
         saliency1 = self.compute_saliency_gradients()
-        current_loss = validation1
-        real_loss = self.getloss("classic")
+        loss = self.getloss("classic")
         self.start_time = time.time()
         self.max_duration = 300
         self.positive_percentage = []
         self.negative_percentage = []
         self.validation_losses = []
-        self.epochs = []
-        epoch = 0
+        self.epoch = 0
         self.measure_impact_pixels()
-        while self.stop_condition()
-            
 
-            self.epochs.append(epoch)
-            # self.optimizer.zero_grad()
-            print(loss.item())
+        while self.stop_condition():
+            
             loss.backward(retain_graph=True)
             self.adjust_weights_according_grad()
-            validation_losses.append(current_loss)
-            current_loss = self.am_I_overfitting().item()
-            epoch +=1
             loss = self.getloss("classic")
             self.optimizer.zero_grad()
             _ = self.compute_saliency_gradients()
             
             
 
-        # saliency2 = self.compute_saliency_map(self.input,self.label).show()
         self.measure_impact_pixels()
         plotter = TrainingProgressPlotter()
-        plotter.plot_percentages(self.epochs, self.negative_percentage, self.positive_percentage)
+        plotter.plot_percentages(list(range(self.epoch)), self.negative_percentage, self.positive_percentage)
 
 
-        self.measure_impact_pixels()
-        self.adjust_weights_according_grad()
-        self.zero_grads()
+
         
-        validation2 = self.am_I_overfitting().item()
 
         saliency2 = self.compute_saliency_gradients() 
 
-        self.measure_impact_pixels()
-        image_window = ChoserWindow(saliency1, f"Original Model, loss {validation1}", saliency2, f"Modified Model, loss {validation2}")
+        image_window = ChoserWindow(saliency1, f"Original Model, loss {self.validation_losses[0]}", saliency2, f"Modified Model, loss {self.validation_losses[-1]}")
         blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
         
         blended_image.show()
@@ -223,9 +210,12 @@ class PunisherLoss(nn.Module):
     def stop_condition(self):
         loss = self.am_I_overfitting()
         print(loss.item())
+
+        # tracking progress
         self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
         self.negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
-
+        self.validation_losses.append(loss)
+        self.epoch += 1
 
 
         condition = time.time() - self.start_time < self.max_duration
