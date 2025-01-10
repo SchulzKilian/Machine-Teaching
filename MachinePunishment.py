@@ -26,10 +26,11 @@ class PunisherLoss(nn.Module):
         self.negative_percentage = []
         self.validation_losses = []
         self.epoch = 0
-        self.validation_set = self.create_validation_set(training_dataset,100)
         self.label = None
-        self.model = model
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = model.to(self.device)
         self.training_dataset = training_dataset
+        self.validation_set = self.create_validation_set(training_dataset,100)
         if not default_loss:
             self.default_loss = nn.CrossEntropyLoss()
         else:
@@ -63,8 +64,8 @@ class PunisherLoss(nn.Module):
 
     def create_validation_set(self, dataset, num_samples):
         indices = torch.randperm(len(dataset))[:num_samples]
-        images = torch.stack([dataset[i][0] for i in indices])
-        labels = torch.tensor([dataset[i][1] for i in indices])
+        images = torch.stack([dataset[i][0] for i in indices]).to(self.device)
+        labels = torch.tensor([dataset[i][1] for i in indices]).to(self.device)
         return images, labels
     
 
@@ -149,14 +150,18 @@ class PunisherLoss(nn.Module):
         return loss
 
     def custom_loss_function(self, training_dataset, amount=1):
-
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
             image, label = training_dataset[idx]
+
+            image = image.to(self.device)
+            label = torch.tensor(label).to(self.device)
             
             self.compute_saliency_gradients(image.unsqueeze(0), label)
-            result = self.saliency_drawer.get_user_markings(image, gradients=self.gradients)
+
+            cpu_gradients = self.gradients.cpu()
+            result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=cpu_gradients)
             
-            self.marked_pixels = result["marked_pixels"]
+            self.marked_pixels = result["marked_pixels"].to(self.device)
             self.marked_pixels_count = result["neg_count"]
             self.pos_marked_pixels_count = result["pos_count"]
 
@@ -178,18 +183,16 @@ class PunisherLoss(nn.Module):
             except:
                 pass
 
-    def compute_saliency_gradients(self, input_data= None, label= None):
- 
-
+    def compute_saliency_gradients(self, input_data=None, label=None):
         if input_data is None:
             input_data = self.input
         else:
-            self.input = input_data
+            self.input = input_data.to(self.device)
 
         if label is None:
             label = self.label
         else:
-            self.label = label
+            self.label = label.to(self.device)
 
         self.model.eval()
         input_data.requires_grad_()
@@ -198,16 +201,15 @@ class PunisherLoss(nn.Module):
             input_data.grad.zero_()
 
         outputs = self.model(input_data)
-        target = torch.zeros(outputs.size(), dtype=torch.float)
+        target = torch.zeros(outputs.size(), dtype=torch.float).to(self.device)
         target[0][label] = 1.0
         
         loss = self.default_loss(outputs, target)
         self.gradients = torch.abs(torch.autograd.grad(loss, input_data, create_graph=True, retain_graph=True)[0])
         
-        
-        
         self.model.train()
         return self.gradients
+
     
 
 
