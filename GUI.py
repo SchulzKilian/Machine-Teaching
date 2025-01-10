@@ -292,8 +292,7 @@ class SaliencyMapDrawer:
 
         def close_window():
             marked_pixels = torch.zeros((1, 3, height, width))
-            pos_count = 0
-            neg_count = 0
+
 
             for x in range(height):
                 for y in range(width):
@@ -304,14 +303,10 @@ class SaliencyMapDrawer:
 
                     if pixel == (255, 0, 1) and saliency_alpha > 0:
                         marked_pixels[0, :, x, y] = 1
-                        neg_count += 1
                     elif pixel == (0, 255, 1) and saliency_alpha > 0:
                         marked_pixels[0, :, x, y] = -1
-                        pos_count += 1
 
             result["marked_pixels"] = marked_pixels
-            result["pos_count"] = pos_count
-            result["neg_count"] = neg_count
             root.destroy()
 
         close_button = tk.Button(window, text="Continue", command=close_window)
