@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from PIL import Image
 
 import torch.optim as optim
 
@@ -70,10 +69,6 @@ class PunisherLoss(nn.Module):
     
 
 
-
-
-
-
     def zero_grads(self):
         for param in self.model.parameters():
             if param.grad is not None:
@@ -85,14 +80,13 @@ class PunisherLoss(nn.Module):
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
         if kind == "normalized":
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))/ torch.sum((self.gradients))
-            # continue
+            # so far normalized gives the most natural saliency maps
         
 
     def backward(self):
-        
-
-        if self.marked_pixels_count + self.pos_marked_pixels_count  == 0:
+        if torch.all(self.marked_pixels == 0).item():
             return
+        
         old_model = self.model.state_dict()
         self.marked_pixels.requires_grad = True
 
@@ -125,9 +119,7 @@ class PunisherLoss(nn.Module):
         saliency2 = self.gradients.clone().detach()
 
         image_window = ChoserWindow(saliency1, f"Original Model, loss {self.validation_losses[0]}", saliency2, f"Modified Model, loss {self.validation_losses[-1]}")
-        # blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
-        
-        # blended_image.show()
+
         update = image_window.run()
         if not update:
             self.model.load_state_dict(old_model)
@@ -162,8 +154,7 @@ class PunisherLoss(nn.Module):
             result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=cpu_gradients)
             
             self.marked_pixels = result["marked_pixels"].to(self.device)
-            self.marked_pixels_count = result["neg_count"]
-            self.pos_marked_pixels_count = result["pos_count"]
+
 
         return self
 
@@ -211,7 +202,6 @@ class PunisherLoss(nn.Module):
         return self.gradients
 
     
-
 
     def stop_condition(self):
         
