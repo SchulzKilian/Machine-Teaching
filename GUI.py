@@ -73,23 +73,53 @@ class ChoserWindow:
         self.canvas1.bind("<Button-1>", lambda event: self.on_image_click(False))
         self.canvas2.bind("<Button-1>", lambda event: self.on_image_click(True))
 
+    def create_saliency_map_image(self, gradients):
+        """Converts raw gradients into a PIL Image saliency map"""
+        max_grad = gradients.max().detach()
+        normalized_gradients = gradients.clone().detach() / (max_grad + 1e-8)
+        saliency_map_numpy = normalized_gradients.squeeze().cpu().detach().numpy()
+        saliency_map_numpy = np.log1p(saliency_map_numpy)
+
+        if len(saliency_map_numpy.shape) == 2:
+            saliency_map_rgba = np.zeros((saliency_map_numpy.shape[0], saliency_map_numpy.shape[1], 4), dtype=np.uint8)
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy.copy(), nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
+            
+            green_intensity = (safe_saliency_map * 255).astype(np.uint8)
+            alpha_channel = np.full_like(green_intensity, 128)
+            alpha_channel[green_intensity == 0] = 0
+            
+            saliency_map_rgba[:, :, 1] = green_intensity
+            saliency_map_rgba[:, :, 3] = alpha_channel
+        else:
+            safe_saliency_map = np.nan_to_num(saliency_map_numpy, nan=0.0, posinf=1.0, neginf=0.0)
+            safe_saliency_map = np.clip(safe_saliency_map, 0, 1)
+            
+            saliency_map_rgba = np.zeros((safe_saliency_map.shape[1], safe_saliency_map.shape[2], 4), dtype=np.uint8)
+            green_intensity = (np.mean(safe_saliency_map, axis=0) * 255).astype(np.uint8)
+            alpha_channel = np.full_like(green_intensity, 128)
+            alpha_channel[green_intensity == 0] = 0
+            
+            saliency_map_rgba[:, :, 1] = green_intensity
+            saliency_map_rgba[:, :, 3] = alpha_channel
+
+        return Image.fromarray(saliency_map_rgba, 'RGBA')
+
     def display_images(self):
         width = self.root.winfo_width()
         height = self.root.winfo_height()
 
         # Example: assuming blended_image1 and blended_image2 are Image objects
-        blended_image1 = self.blend_images(self.image1)
-        blended_image2 = self.blend_images(self.image2)
+        self.image1 = self.create_saliency_map_image(self.image1)
+        self.image2 = self.create_saliency_map_image(self.image2)
 
-        self.blended_image_tk1 = ImageTk.PhotoImage(blended_image1.resize((width // 2, height)))
-        self.blended_image_tk2 = ImageTk.PhotoImage(blended_image2.resize((width // 2, height)))
+
+        self.blended_image_tk1 = ImageTk.PhotoImage(self.image1.resize((width // 2, height)))
+        self.blended_image_tk2 = ImageTk.PhotoImage(self.image2.resize((width // 2, height)))
 
         self.display_image(self.blended_image_tk1, self.canvas1)
         self.display_image(self.blended_image_tk2, self.canvas2)
 
-    def blend_images(self, image):
-        # Example function to blend an image (replace with your own logic)
-        return image
 
     def display_image(self, image_tk, canvas):
         canvas.delete("all")

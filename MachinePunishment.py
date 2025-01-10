@@ -21,8 +21,7 @@ class PunisherLoss(nn.Module):
         self.loss = None
         self.marked_pixels = None
         self.input = None
-        self.start_time = time.time()
-        self.max_duration = 300
+        self.max_duration = 8
         self.positive_percentage = []
         self.negative_percentage = []
         self.validation_losses = []
@@ -51,7 +50,8 @@ class PunisherLoss(nn.Module):
     def forward(self, inputs, targets, epoch, number):
         print(epoch)
         if self.decide_callback(epoch,number):
-            return self.custom_loss_function(self.training_dataset)
+            self.custom_loss_function(self.training_dataset)
+            return self
 
         
         else:
@@ -79,7 +79,7 @@ class PunisherLoss(nn.Module):
                 param.grad.zero_()
 
 
-    def getloss(self, kind="classic"):
+    def getloss(self, kind="normalized"):
         if kind == "classic":
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
         if kind == "normalized":
@@ -96,25 +96,17 @@ class PunisherLoss(nn.Module):
         self.marked_pixels.requires_grad = True
 
         saliency1 = self.gradients.clone().detach()
-
+        self.start_time = time.time()
 
         self.measure_impact_pixels()
 
         while self.stop_condition():
-            # Compute fresh gradients with retain_graph
+
             self.gradients = self.compute_saliency_gradients()
-            
-            # Compute loss
-            loss = self.getloss("classic")
-            
-            # Backward with retain_graph
+            loss = self.getloss()
             loss.backward(retain_graph=True)
+            self.adjust_weights_according_grad()
             
-            # Update weights
-            with torch.no_grad():
-                self.adjust_weights_according_grad()
-            
-            print("one managed")
             self.optimizer.zero_grad()
 
 
@@ -131,8 +123,8 @@ class PunisherLoss(nn.Module):
 
         saliency2 = self.gradients.clone().detach()
 
-        image_window = ChoserWindow(saliency1, f"Original Model, loss {self.validation_losses[0]}", self.gradients, f"Modified Model, loss {self.validation_losses[-1]}")
-        blended_image = Image.blend(saliency1, self.gradients, alpha=1.0)
+        image_window = ChoserWindow(saliency1, f"Original Model, loss {self.validation_losses[0]}", saliency2, f"Modified Model, loss {self.validation_losses[-1]}")
+        # blended_image = Image.blend(saliency1, saliency2, alpha=1.0)
         
         # blended_image.show()
         update = image_window.run()
@@ -143,21 +135,10 @@ class PunisherLoss(nn.Module):
         
     def adjust_weights_according_grad(self):
         with torch.no_grad():
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
     
 
-
-
-
-    def padjust_weights_according_grad(self):
-        for name, param in self.model.named_parameters():
-            if name.startswith("conv") and False:
-                continue
-            if param.grad is not None:
-                torch.nn.utils.clip_grad_value_(param, clip_value=1.0)
-                param.data = param.data - param.grad* 0.001
-                param.grad.zero_()
-    
 
     def am_I_overfitting(self):
 
@@ -232,13 +213,13 @@ class PunisherLoss(nn.Module):
 
     def stop_condition(self):
         
-        loss = self.am_I_overfitting()
-        print(loss.item())
+        self.loss = self.am_I_overfitting()
+        print(self.loss.item())
 
         # tracking progress
         self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
         self.negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
-        self.validation_losses.append(loss)
+        self.validation_losses.append(self.loss)
         self.epoch += 1
 
 
