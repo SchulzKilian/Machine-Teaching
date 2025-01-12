@@ -4,6 +4,10 @@ import torchvision.models as models
 import torch.nn.functional as F
 # from torchviz import make_dot
 
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 class ResNet50(nn.Module):
     def __init__(self, num_classes, input_channels=3):
         super(ResNet50, self).__init__()
@@ -22,10 +26,14 @@ class ResNet50(nn.Module):
         return self.resnet(x)
 
     def train_model(model, train_loader, criterion, optimizer, num_epochs):
+        model.to(device) 
         model.train()
         for epoch in range(num_epochs):
+
             running_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader):
+                inputs = inputs.to(device)  
+                labels = labels.to(device)
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 try:
@@ -73,10 +81,13 @@ class SimpleCNN(nn.Module):
 
 
     def train_model(model, train_loader, criterion, optimizer, num_epochs):
+        model.to(device)
         model.train()
         for epoch in range(num_epochs):
             running_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader):
+                inputs = inputs.to(device)  
+                labels = labels.to(device)
                 model.train()
                 optimizer.zero_grad()
                 outputs = model(inputs)
@@ -111,11 +122,13 @@ class SimplestCNN(nn.Module):
         return x
 
     def train_model(model, train_loader, criterion, optimizer, num_epochs):
+        model.to(device)
         model.train()
         for epoch in range(num_epochs):
             running_loss = 0.0
             for i, (inputs, labels) in enumerate(train_loader):
-                print(labels)
+                inputs = inputs.to(device)  
+                labels = labels.to(device)
                 optimizer.zero_grad()
                 outputs = model(inputs)
                 # loss = criterion(outputs, labels)
