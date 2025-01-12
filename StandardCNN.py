@@ -139,3 +139,7 @@ class SimplestCNN(nn.Module):
                 optimizer.step()
                 running_loss += loss.item()
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')
+
+
+
+    

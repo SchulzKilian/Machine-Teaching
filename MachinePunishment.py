@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import stop_conditions
 import torch.optim as optim
 
 import numpy as np
@@ -239,6 +239,7 @@ class PunisherLoss(nn.Module):
 
 
         condition = time.time() - self.start_time < self.max_duration
-        return condition
+        
+        return condition and not stop_conditions.stop_for_validation(self.validation_losses) and not stop_conditions.stop_for_pixel_loss(self.positive_percentage,self.negative_percentage)
 
         
