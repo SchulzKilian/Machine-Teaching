@@ -21,7 +21,7 @@ class PunisherLoss(nn.Module):
         self.marked_pixels = None
         self.input = None
         self.loss = None
-        self.max_duration = 8
+        self.max_duration = 20
         self.positive_percentage = []
         self.negative_percentage = []
         self.validation_losses = []
@@ -60,6 +60,9 @@ class PunisherLoss(nn.Module):
         
         else:
             print("default")
+            self.positive_percentage = []
+            self.negative_percentage = []
+            self.validation_losses = []
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
             return self.default_loss(inputs, targets)
@@ -92,7 +95,6 @@ class PunisherLoss(nn.Module):
     def backward(self):
         if torch.all(self.marked_pixels == 0).item():
             return
-        
         old_model = self.model.state_dict()
         self.current_min_model = old_model
         self.current_min_loss = None
@@ -223,13 +225,13 @@ class PunisherLoss(nn.Module):
         if self.loss:
             if self.current_min_loss is None:
 
-                self.current_min_loss = self.loss.item()
+                self.current_min_loss = self.loss.clone().detach().item()
                 self.current_min_epoch = 1
             else:
                 if self.loss.item() < self.current_min_loss:
                     self.current_min_epoch = self.epoch
                     self.current_min_model = self.model.state_dict()
-                    self.current_min_loss = self.loss.item()
+                    self.current_min_loss = self.loss.clone().detach().item()
 
         # tracking progress
         self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())

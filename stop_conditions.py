@@ -4,7 +4,12 @@ def stop_for_validation(validation_losses):
     else:
         y1, y2 = sum(validation_losses[-4:-2]) / 2, sum(validation_losses[-2:]) / 2
         slope = (y2 - y1) / 2 
-        return slope <= 0
+        condition = slope <= 0
+        if condition:
+            print("Validation loss stop condition triggered")
+            return True
+        else:
+            return False
 
 
 def stop_for_pixel_loss(positives, negatives):
@@ -13,4 +18,8 @@ def stop_for_pixel_loss(positives, negatives):
     else:
         pos_slope = (positives[-1] - positives[-3]) / 2
         neg_slope = (negatives[-1] - negatives[-3]) / 2 * -1
-        return pos_slope + neg_slope <= 0
+        condition = pos_slope + neg_slope <= 0
+        if condition:
+            print("Pixel loss stop condition triggered")
+            return True
+        return False
