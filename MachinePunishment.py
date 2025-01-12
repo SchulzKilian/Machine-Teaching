@@ -30,7 +30,7 @@ class PunisherLoss(nn.Module):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.model = model.to(self.device)
-        self.training_dataset = training_dataset.to(self.device)
+        self.training_dataset = training_dataset#   .to(self.device)
 
         self.validation_set = self.create_validation_set(training_dataset,100)
         if not default_loss:
