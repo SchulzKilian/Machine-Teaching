@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
-from torchviz import make_dot
+# from torchviz import make_dot
 
 class ResNet50(nn.Module):
     def __init__(self, num_classes, input_channels=3):
@@ -85,7 +85,7 @@ class SimpleCNN(nn.Module):
                 optimizer.step()
                 running_loss += loss.item()
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')
-        make_dot(loss, params=dict(model.named_parameters())).render("computation_graph", format="png")
+        # make_dot(loss, params=dict(model.named_parameters())).render("computation_graph", format="png")
 
 
 
