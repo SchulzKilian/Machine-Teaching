@@ -28,8 +28,10 @@ class PunisherLoss(nn.Module):
         self.epoch = 0
         self.label = None
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         self.model = model.to(self.device)
-        self.training_dataset = training_dataset
+        self.training_dataset = training_dataset.to(self.device)
+
         self.validation_set = self.create_validation_set(training_dataset,100)
         if not default_loss:
             self.default_loss = nn.CrossEntropyLoss()
@@ -49,6 +51,7 @@ class PunisherLoss(nn.Module):
     
 
     def forward(self, inputs, targets, epoch, number):
+
         print(epoch)
         if self.decide_callback(epoch,number):
             self.custom_loss_function(self.training_dataset)
@@ -57,6 +60,8 @@ class PunisherLoss(nn.Module):
         
         else:
             print("default")
+            inputs = inputs.to(self.device)
+            targets = targets.to(self.device)
             return self.default_loss(inputs, targets)
 
         
