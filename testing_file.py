@@ -138,6 +138,7 @@ for model in models:
     criterion = PunisherLoss(train_dataset,model, decide_callback, optimizer=optimizer)
     # criterion = nn.CrossEntropyLoss()
     model.train_model(train_loader, criterion, optimizer, num_epochs)
+    # model.train_model(criterion, optimizer)
 
 # Define a function to test a model
 def test_model(model, test_loader):

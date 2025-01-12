@@ -17,9 +17,10 @@ class PunisherLoss(nn.Module):
     def __init__(self, training_dataset, model, decide_callback, default_loss = None, optimizer = None):
         super(PunisherLoss, self).__init__()
         self.decide_callback = decide_callback
-        self.loss = None
+        self.validation_loss = None
         self.marked_pixels = None
         self.input = None
+        self.loss = None
         self.max_duration = 8
         self.positive_percentage = []
         self.negative_percentage = []
@@ -88,6 +89,9 @@ class PunisherLoss(nn.Module):
             return
         
         old_model = self.model.state_dict()
+        self.current_min_model = old_model
+        self.current_min_loss = None
+        
         self.marked_pixels.requires_grad = True
 
         saliency1 = self.gradients.clone().detach()
@@ -98,15 +102,19 @@ class PunisherLoss(nn.Module):
         while self.stop_condition():
 
             self.gradients = self.compute_saliency_gradients()
-            loss = self.getloss()
-            loss.backward(retain_graph=True)
+            self.loss = self.getloss()
+            self.loss.backward(retain_graph=True)
             self.adjust_weights_according_grad()
             
             self.optimizer.zero_grad()
 
 
             
-            
+        print(f"Best model was {self.current_min_epoch} we will load that version")
+        print(f"The loss there is {self.current_min_loss} and not like here {self.loss.item()}")
+        if self.epoch != self.current_min_epoch:
+            self.model.load_state_dict(self.current_min_model)
+
 
         self.measure_impact_pixels()
         plotter = TrainingProgressPlotter()
@@ -137,9 +145,9 @@ class PunisherLoss(nn.Module):
 
         self.model.eval()
         outputs = self.model(self.validation_set[0])
-        loss = self.default_loss(outputs,self.validation_set[1])
+        validation_loss = self.default_loss(outputs,self.validation_set[1])
         self.model.train()
-        return loss
+        return validation_loss
 
     def custom_loss_function(self, training_dataset, amount=1):
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
@@ -195,8 +203,8 @@ class PunisherLoss(nn.Module):
         target = torch.zeros(outputs.size(), dtype=torch.float).to(self.device)
         target[0][label] = 1.0
         
-        loss = self.default_loss(outputs, target)
-        self.gradients = torch.abs(torch.autograd.grad(loss, input_data, create_graph=True, retain_graph=True)[0])
+        first_loss = self.default_loss(outputs, target)
+        self.gradients = torch.abs(torch.autograd.grad(first_loss, input_data, create_graph=True, retain_graph=True)[0])
         
         self.model.train()
         return self.gradients
@@ -205,13 +213,23 @@ class PunisherLoss(nn.Module):
 
     def stop_condition(self):
         
-        self.loss = self.am_I_overfitting()
-        print(self.loss.item())
+        self.validation_loss = self.am_I_overfitting()
+        print(self.validation_loss.item())
+        if self.loss:
+            if self.current_min_loss is None:
+
+                self.current_min_loss = self.loss.item()
+                self.current_min_epoch = 1
+            else:
+                if self.loss.item() < self.current_min_loss:
+                    self.current_min_epoch = self.epoch
+                    self.current_min_model = self.model.state_dict()
+                    self.current_min_loss = self.loss.item()
 
         # tracking progress
         self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
         self.negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
-        self.validation_losses.append(self.loss)
+        self.validation_losses.append(self.validation_loss)
         self.epoch += 1
 
 
