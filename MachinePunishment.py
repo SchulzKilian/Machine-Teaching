@@ -62,6 +62,7 @@ class PunisherLoss(nn.Module):
             print("default")
             self.positive_percentage = []
             self.negative_percentage = []
+            self.loss = None
             self.epoch = 0
             self.validation_losses = []
             inputs = inputs.to(self.device)
@@ -85,7 +86,7 @@ class PunisherLoss(nn.Module):
                 param.grad.zero_()
 
 
-    def getloss(self, kind="normalized"):
+    def getloss(self, kind="classic"):
         if kind == "classic":
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
         if kind == "normalized":
@@ -226,7 +227,10 @@ class PunisherLoss(nn.Module):
     def stop_condition(self):
         
         self.validation_loss = self.am_I_overfitting()
-        print(self.validation_loss.item())
+        try:
+            print(self.loss.item())
+        except:
+            pass
         if self.loss:
             if self.current_min_loss is None:
 
@@ -234,6 +238,7 @@ class PunisherLoss(nn.Module):
                 self.current_min_epoch = 1
             else:
                 if self.loss.item() < self.current_min_loss:
+                    print(f"the best new current min loss is {self.loss.item()} at epoch {self.epoch}")
                     self.current_min_epoch = self.epoch
                     self.current_min_model = self.model.state_dict()
                     self.current_min_loss = self.loss.clone().detach().item()
