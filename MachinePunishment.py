@@ -62,6 +62,7 @@ class PunisherLoss(nn.Module):
             print("default")
             self.positive_percentage = []
             self.negative_percentage = []
+            self.epoch = 0
             self.validation_losses = []
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
@@ -125,7 +126,11 @@ class PunisherLoss(nn.Module):
 
         self.measure_impact_pixels()
         plotter = TrainingProgressPlotter()
-        plotter.plot_percentages(list(range(self.epoch)), self.negative_percentage, self.positive_percentage)
+        try:
+            plotter.plot_percentages(list(range(self.epoch)), self.negative_percentage, self.positive_percentage)
+        
+        except: 
+            print(f"Dimension error between length epoch {self.epoch}, length of negative {len(self.negative_percentage)} and length of positive {len(self.positive_percentage)}")
 
 
 
