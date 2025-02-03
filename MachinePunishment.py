@@ -228,7 +228,7 @@ class PunisherLoss(nn.Module):
         
         self.validation_loss = self.am_I_overfitting()
         try:
-            print(self.loss.item())
+            print(self.validation_loss.item())
         except:
             pass
         if self.loss:
