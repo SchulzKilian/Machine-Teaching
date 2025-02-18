@@ -20,11 +20,7 @@ class PunisherLoss(nn.Module):
         self.validation_loss = None
         self.marked_pixels = None
         self.input = None
-        self.loss = None
         self.max_duration = 20
-        self.positive_percentage = []
-        self.negative_percentage = []
-        self.validation_losses = []
         self.epoch = 0
         self.label = None
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -54,17 +50,19 @@ class PunisherLoss(nn.Module):
 
         print(epoch)
         if self.decide_callback(epoch,number):
+            self.positive_percentage = []
+            self.negative_percentage = []
+            self.loss = None
+            self.current_min_loss = float('inf')
+            self.epoch = 0
+            self.validation_losses = []
             self.custom_loss_function(self.training_dataset)
             return self
 
         
         else:
             print("default")
-            self.positive_percentage = []
-            self.negative_percentage = []
-            self.loss = None
-            self.epoch = 0
-            self.validation_losses = []
+
             inputs = inputs.to(self.device)
             targets = targets.to(self.device)
             return self.default_loss(inputs, targets)
@@ -86,20 +84,24 @@ class PunisherLoss(nn.Module):
                 param.grad.zero_()
 
 
-    def getloss(self, kind="classic"):
+    def getloss(self, kind="normalized_softm"):
         if kind == "classic":
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))
-        if kind == "normalized":
+        elif kind == "normalized":
             return torch.sum(self.marked_pixels*torch.clamp(self.gradients, min = -0.5, max = 0.5))/ torch.sum((self.gradients))
             # so far normalized gives the most natural saliency maps
-        
+        if kind == "normalized_softm":
+            gradients_normalized = (self.gradients - self.gradients.min()) / (self.gradients.max() - self.gradients.min() + 1e-8)
+            custom_loss=  torch.sum(self.marked_pixels * gradients_normalized) / (torch.sum(gradients_normalized) + 1e-8)
+            l2_reg = torch.mean(self.gradients**2) 
+            return custom_loss + l2_reg
 
     def backward(self):
         if torch.all(self.marked_pixels == 0).item():
             return
         old_model = self.model.state_dict()
         self.current_min_model = old_model
-        self.current_min_loss = None
+
         
         self.marked_pixels.requires_grad = True
 
@@ -114,7 +116,6 @@ class PunisherLoss(nn.Module):
             self.loss = self.getloss()
             self.loss.backward(retain_graph=True)
             self.adjust_weights_according_grad()
-            
             self.optimizer.zero_grad()
 
 
@@ -232,16 +233,12 @@ class PunisherLoss(nn.Module):
         except:
             pass
         if self.loss:
-            if self.current_min_loss is None:
 
+            if self.loss.item() < self.current_min_loss:
+                print(f"the best new current min loss is {self.loss.item()} at epoch {self.epoch}")
+                self.current_min_epoch = self.epoch
+                self.current_min_model = self.model.state_dict()
                 self.current_min_loss = self.loss.clone().detach().item()
-                self.current_min_epoch = 1
-            else:
-                if self.loss.item() < self.current_min_loss:
-                    print(f"the best new current min loss is {self.loss.item()} at epoch {self.epoch}")
-                    self.current_min_epoch = self.epoch
-                    self.current_min_model = self.model.state_dict()
-                    self.current_min_loss = self.loss.clone().detach().item()
 
         # tracking progress
         self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
@@ -252,6 +249,6 @@ class PunisherLoss(nn.Module):
 
         condition = time.time() - self.start_time < self.max_duration
         
-        return condition and not stop_conditions.stop_for_validation(self.validation_losses) and not stop_conditions.stop_for_pixel_loss(self.positive_percentage,self.negative_percentage)
+        return condition  and not stop_conditions.stop_for_pixel_loss(self.positive_percentage,self.negative_percentage)
 
         
