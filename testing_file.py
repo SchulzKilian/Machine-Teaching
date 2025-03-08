@@ -14,7 +14,7 @@ doglabels = [34, 21, 6, 33, 8, 1, 24, 27, 12, 10, 28, 7]
 
 
 # Define training parameters
-batch_size = 1
+batch_size = 4
 learning_rate = 0.1
 num_epochs = 10
 data_size = 800

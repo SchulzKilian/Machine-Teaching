@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import stop_conditions
 import torch.optim as optim
-
+import ImagePicker
 import numpy as np
 
 from GUI import SaliencyMapDrawer, ChoserWindow, TrainingProgressPlotter
