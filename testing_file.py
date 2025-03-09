@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 from StandardCNN import ResNet50, SimpleCNN, SimplestCNN
 from MachinePunishment import PunisherLoss
 import os
+from TestInterface import DragDropInterface
 from PIL import Image
 
 doglabels = [34, 21, 6, 33, 8, 1, 24, 27, 12, 10, 28, 7]
@@ -187,7 +188,7 @@ def print_top_labels(dataset, name):
     
     label_counts = Counter(labels)
     print(f"\nTop 5 labels in {name}:")
-    for label, count in label_counts.most_common(5):
+    for label, count in label_counts.most_common(37):
         print(f"Label {label}: {count} occurrences")
 
 print_top_labels(train_dataset, "training set")
@@ -200,4 +201,9 @@ for i, model in enumerate(models):
     torch.save(model.state_dict(), 'trained_model.pth')
 
 
-    
+    if input("\nDo you want to open the interface? (y/n): ").lower() == 'y':
+        model.load_state_dict(torch.load('trained_model.pth'))
+        model.eval()
+        
+        interface = DragDropInterface(model, transform)
+        interface.mainloop()
