@@ -18,7 +18,7 @@ batch_size = 4
 learning_rate = 0.1
 num_epochs = 10
 data_size = 1600
-arg = "catsvdogs"
+arg = "pets"
 
 class CustomImageDataset(Dataset):
     def __init__(self, folder_path, num_samples, transform):
@@ -59,6 +59,7 @@ class SubsetDataset(Dataset):
         self.transform = transform
         self.dataset = dataset
         self.num_samples = num_samples
+
 
 
     def __len__(self):
@@ -162,6 +163,7 @@ def test_model(model, test_loader):
     total = 0
     with torch.no_grad():
         for inputs, labels in test_loader:
+
             outputs = model(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -170,11 +172,31 @@ def test_model(model, test_loader):
     accuracy = 100 * correct / total
     return accuracy
 
+
+from collections import Counter
+
+# Get label frequencies function
+def print_top_labels(dataset, name):
+    try:
+        if isinstance(dataset, SubsetDataset):
+            labels = [label for _, label in dataset.dataset][:len(dataset)]
+        else:
+            labels = dataset.labels[:len(dataset)]
+    except AttributeError:
+        labels = [label for _, label in dataset]
+    
+    label_counts = Counter(labels)
+    print(f"\nTop 5 labels in {name}:")
+    for label, count in label_counts.most_common(5):
+        print(f"Label {label}: {count} occurrences")
+
+print_top_labels(train_dataset, "training set")
+print_top_labels(test_dataset, "testing set")
 # Test each model
 for i, model in enumerate(models):
     accuracy = test_model(model, test_loader)
     print(f'Accuracy of model {i+1}: {accuracy}%')
-
+ 
     torch.save(model.state_dict(), 'trained_model.pth')
 
 
