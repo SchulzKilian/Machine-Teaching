@@ -1,36 +1,37 @@
-import tkinter as tk
-from tkinterdnd2 import TkinterDnD
+import argparse
 from PIL import Image
 import torch
 
-class DragDropInterface(TkinterDnD.Tk):
-    def __init__(self, model, transform):
-        super().__init__()
-        self.model = model
-        self.transform = transform
+def classify_image(model, transform):
+    image_path = input("Please input the path to the image")
+    try:
+        image = Image.open(image_path).convert('RGB')
+        tensor = transform(image).unsqueeze(0)
         
-        self.title("Pet Breed Classifier")
-        self.geometry("400x200")
-        
-        self.label = tk.Label(self, text="Drag & Drop Image Here", bg='lightgrey', width=50, height=10)
-        self.label.pack(pady=20)
-        
-        self.result_label = tk.Label(self, text="Prediction: ")
-        self.result_label.pack()
-        
-        self.label.drop_target_register('DND_Files')
-        self.label.dnd_bind('<<Drop>>', self.process_drop)
+        with torch.no_grad():
+            outputs = model(tensor)
+            _, pred = torch.max(outputs, 1)
+            
+        print(f"Predicted Breed: {pred.item()}")
+    except Exception as e:
+        print(f"Error: {e}")
 
-    def process_drop(self, event):
-        file_path = event.data.strip('{}')
-        try:
-            image = Image.open(file_path)
-            tensor = self.transform(image).unsqueeze(0)
-            
-            with torch.no_grad():
-                output = self.model(tensor)
-                _, pred = torch.max(output, 1)
-            
-            self.result_label.config(text=f"Predicted Breed: {pred.item()}")
-        except Exception as e:
-            self.result_label.config(text=f"Error: {str(e)}")
+if __name__ == "__main__":
+    # Example usage (replace with your model/transform)
+    from torchvision import transforms
+    
+    # Model/transform setup
+    transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize the images to match the input size of ResNet50
+    transforms.ToTensor(),          # Convert the images to PyTorch tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize the images
+])
+    model = torch.nn.Sequential()  # Replace with your trained model
+    
+    # Command-line interface
+    parser = argparse.ArgumentParser(description='Classify pet breeds')
+    parser.add_argument('image_path', type=str, help='Path to input image')
+    args = parser.parse_args()
+    
+    # Run classification
+    classify_image(model, transform, args.image_path)
