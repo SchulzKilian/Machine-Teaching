@@ -21,11 +21,11 @@ class PunisherLoss(nn.Module):
         self.marked_pixels = None
         self.input = None
         self.max_duration = 20
+        self.number = 0
         self.epoch = 0
         self.label = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        self.model = model.to(self.device)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.model = model
         self.training_dataset = training_dataset#   .to(self.device)
 
         self.validation_set = self.create_validation_set(training_dataset,100)
@@ -46,10 +46,14 @@ class PunisherLoss(nn.Module):
         return self.loss.item()
     
 
-    def forward(self, inputs, targets, epoch, number):
+    def forward(self, inputs, targets, epoch):
+        self.number  += 1
+        if epoch != self.epoch:
+            self.number = 0
+            self.epoch = epoch
 
         print(epoch)
-        if self.decide_callback(epoch,number):
+        if self.decide_callback(epoch,self.number):
             self.positive_percentage = []
             self.negative_percentage = []
             self.loss = None
@@ -165,6 +169,7 @@ class PunisherLoss(nn.Module):
 
     def custom_loss_function(self, training_dataset, amount=1):
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
+
             image, label = training_dataset[idx]
 
             image = image.to(self.device)
@@ -174,6 +179,11 @@ class PunisherLoss(nn.Module):
 
             cpu_gradients = self.gradients.cpu()
             result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=cpu_gradients)
+
+            if result is None or result["marked_pixels"] is None:
+                print("No markings were made, skipping this image.")
+                self.marked_pixels = None
+                continue
             
             self.marked_pixels = result["marked_pixels"].to(self.device)
 

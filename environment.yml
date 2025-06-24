@@ -1,0 +1,19 @@
+name: mt_env
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - matplotlib
+  - numpy
+  - scipy
+  - pip
+  - pip:
+      - torchviz
+      - triton

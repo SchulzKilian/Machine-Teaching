@@ -5,7 +5,7 @@ import torch.nn.functional as F
 # from torchviz import make_dot
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu' if torch.cuda.is_available() else 'cpu')
 
 
 class ResNet50(nn.Module):
