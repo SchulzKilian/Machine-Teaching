@@ -58,7 +58,6 @@ class PunisherLoss(nn.Module):
             self.negative_percentage = []
             self.loss = None
             self.current_min_loss = float('inf')
-            self.epoch = 0
             self.validation_losses = []
             self.custom_loss_function(self.training_dataset)
             return self
@@ -254,7 +253,7 @@ class PunisherLoss(nn.Module):
         self.positive_percentage.append(torch.sum(self.positive_pixels*self.gradients).item()/torch.sum(self.gradients).item())
         self.negative_percentage.append(torch.sum(self.negative_pixels*self.gradients).item()/torch.sum(self.gradients).item())
         self.validation_losses.append(self.validation_loss)
-        self.epoch += 1
+
 
 
         condition = time.time() - self.start_time < self.max_duration

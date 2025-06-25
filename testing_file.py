@@ -160,10 +160,13 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 def decide_callback(epoch, number):
     return False
+    if number == 0:
+        return True
+    return False
+    # Return true 
+    
 
-# MINIMAL CHANGE 2: REPLACED THE BROKEN `model.train_model` CALL
-# This section now contains the explicit training loop.
-# Set up device
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -172,6 +175,8 @@ models = [resnet18(weights=None)] # weights=None means training from scratch
 
 # This loop now contains the full training logic
 for model in models:
+    train_losses = []
+    val_losses = []
     # Adapt final layer for your number of classes
     num_ftrs = model.fc.in_features
     model.fc = nn.Linear(num_ftrs, classes)
