@@ -131,8 +131,9 @@ class PunisherLoss(nn.Module):
 
 
         self.measure_impact_pixels()
-        plotter = TrainingProgressPlotter()
+
         try:
+            plotter = TrainingProgressPlotter()
             plotter.plot_percentages(list(range(self.epoch)), self.negative_percentage, self.positive_percentage)
         
         except: 
