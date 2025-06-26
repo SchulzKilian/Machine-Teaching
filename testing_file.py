@@ -12,6 +12,7 @@ from MachinePunishment import PunisherLoss
 import os
 from TestInterface import classify_image 
 from PIL import Image
+import matplotlib.pyplot as plt
 
 
 
@@ -202,8 +203,38 @@ for model in models:
             running_loss += loss.item() * inputs.size(0)
 
         epoch_loss = running_loss / len(train_loader.dataset)
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}")
+        train_losses.append(epoch_loss)
+
+        # --- Validation Pass ---
+        model.eval()
+        running_val_loss = 0.0
+        with torch.no_grad():
+            for inputs, labels in test_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels, epoch) # Using your criterion for validation loss
+                running_val_loss += loss.item() * inputs.size(0)
+        
+        epoch_val_loss = running_val_loss / len(test_loader.dataset)
+        val_losses.append(epoch_val_loss)
+        
+        # Print both losses
+        print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, Val Loss: {epoch_val_loss:.4f}")
+        model.train() # Switch back to training mode
     print("--- Training Finished ---")
+    # --- Plotting the Losses ---
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+    plt.savefig('loss_plot.png')  
+
+
 
 
 # YOUR TESTING LOGIC IS UNCHANGED
