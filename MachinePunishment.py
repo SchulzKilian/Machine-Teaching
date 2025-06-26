@@ -160,12 +160,12 @@ class PunisherLoss(nn.Module):
 
 
     def am_I_overfitting(self):
-
-        self.model.eval()
-        outputs = self.model(self.validation_set[0])
-        validation_loss = self.default_loss(outputs,self.validation_set[1])
-        self.model.train()
-        return validation_loss
+        with torch.no_grad():
+            self.model.eval()
+            outputs = self.model(self.validation_set[0])
+            validation_loss = self.default_loss(outputs,self.validation_set[1])
+            self.model.train()
+            return validation_loss
 
     def custom_loss_function(self, training_dataset, amount=1):
         for idx in np.random.choice(len(training_dataset), size=amount, replace=False):
