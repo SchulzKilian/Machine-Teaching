@@ -172,7 +172,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # Your model initialization list
-models = [resnet18(weights=None)] # weights=None means training from scratch   
+models = [resnet34(weights=None)] # weights=None means training from scratch   
 
 # This loop now contains the full training logic
 for model in models:
