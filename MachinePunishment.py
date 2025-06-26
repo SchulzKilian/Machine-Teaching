@@ -4,7 +4,7 @@ import stop_conditions
 import torch.optim as optim
 import ImagePicker
 import numpy as np
-
+from PIL import Image
 from GUI import SaliencyMapDrawer, ChoserWindow, TrainingProgressPlotter
 
 import time
@@ -14,7 +14,7 @@ torch.autograd.set_detect_anomaly(True)
 
 class PunisherLoss(nn.Module):
 
-    def __init__(self, training_dataset, model, decide_callback, default_loss = None, optimizer = None):
+    def __init__(self, training_dataset, model, decide_callback, saliencies = {}, default_loss = None, optimizer = None):
         super(PunisherLoss, self).__init__()
         self.decide_callback = decide_callback
         self.validation_loss = None
@@ -25,6 +25,7 @@ class PunisherLoss(nn.Module):
         self.epoch = 0
         self.label = None
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.saliencies = saliencies
         self.model = model
         self.training_dataset = training_dataset#   .to(self.device)
 
@@ -171,20 +172,43 @@ class PunisherLoss(nn.Module):
 
             image, label = training_dataset[idx]
 
+
+
+
             image = image.to(self.device)
             label = torch.tensor(label).to(self.device)
-            
             self.compute_saliency_gradients(image.unsqueeze(0), label)
 
-            cpu_gradients = self.gradients.cpu()
-            result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=cpu_gradients)
-
-            if result is None or result["marked_pixels"] is None:
-                print("No markings were made, skipping this image.")
-                self.marked_pixels = None
-                continue
             
-            self.marked_pixels = result["marked_pixels"].to(self.device)
+            if idx in self.saliencies:
+                try:
+                    trimap = Image.open(self.saliencies[idx])
+                    print("--- Using trimap for saliency map ---")
+                except FileNotFoundError:
+                    print(f"Error: File not found at {self.saliencies[idx]}")
+                    exit()
+
+                resized_trimap_pil = trimap.resize((image.shape[2], image.shape[1]), Image.NEAREST)
+                trimap_np = np.array(resized_trimap_pil)
+
+                mask_tensor = torch.ones((image.shape[2], image.shape[1]), dtype=torch.float32)
+
+                mask_tensor[trimap_np == 1] = -1.0
+                self.marked_pixels = mask_tensor.unsqueeze(0).expand(3, -1, -1).to(self.device)
+            
+            else:
+                
+                cpu_gradients = self.gradients.cpu()
+                    
+                result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=cpu_gradients)
+
+                if result is None or result["marked_pixels"] is None:
+                    print("No markings were made, skipping this image.")
+                    self.marked_pixels = None
+                    continue
+                
+                self.marked_pixels = result["marked_pixels"].to(self.device)
+
 
 
         return self

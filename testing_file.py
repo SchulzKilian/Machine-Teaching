@@ -13,6 +13,7 @@ import os
 from TestInterface import classify_image 
 from PIL import Image
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 
@@ -51,8 +52,7 @@ class CustomImageDataset(Dataset):
 
     def __getitem__(self, idx):
         image_raw = self.images[idx]
-        # MINIMAL CHANGE 1: Added .convert('RGB') for robustness.
-        # This prevents crashes from non-RGB images without changing the logic.
+
         image = Image.open(image_raw).convert('RGB')
         if self.transform:
             image = self.transform(image)
@@ -133,8 +133,11 @@ elif arg == "pets":
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
+
     test_dataset = datasets.OxfordIIITPet(root='./pets', split= "test", transform=transform, download = True)
     train_dataset = datasets.OxfordIIITPet(root='./pets',transform=transform, download=True)
+    
+
 
 elif arg == "catsvdogs":
     folder_path = './pets/oxford-iiit-pet/images'
@@ -155,12 +158,20 @@ elif arg == "catsvdogs":
 if arg != "catsvdogs":
     train_dataset = SubsetDataset(train_dataset)
     test_dataset = SubsetDataset(test_dataset)
+    # Initialize the dictionary to hold the masks
+    punishment_masks = {}
+    trimap_transform = transforms.Compose([
+        transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.NEAREST),
+    ])
+    trimap_paths_dict = {
+        i: train_dataset.dataset._segs[i] 
+        for i in range(len(train_dataset))
+    }
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 def decide_callback(epoch, number):
-    return False
     if number == 0:
         return True
     return False
@@ -185,7 +196,7 @@ for model in models:
 
     # Setup optimizer and criterion as you had them
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(train_dataset,model, decide_callback, optimizer=optimizer)
+    criterion = PunisherLoss(train_dataset,model, decide_callback, saliencies = trimap_paths_dict, optimizer=optimizer)
 
     print("\n--- Starting Training ---")
     model.train() # Set model to training mode
