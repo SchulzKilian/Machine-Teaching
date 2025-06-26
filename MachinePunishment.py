@@ -143,10 +143,12 @@ class PunisherLoss(nn.Module):
         
 
         saliency2 = self.gradients.clone().detach()
+        try:
+            image_window = ChoserWindow(saliency1, f"Original Model, loss {self.validation_losses[0]}", saliency2, f"Modified Model, loss {self.validation_losses[-1]}")
 
-        image_window = ChoserWindow(saliency1, f"Original Model, loss {self.validation_losses[0]}", saliency2, f"Modified Model, loss {self.validation_losses[-1]}")
-
-        update = image_window.run()
+            update = image_window.run()
+        except:
+            update = True
         if not update:
             self.model.load_state_dict(old_model)
             
