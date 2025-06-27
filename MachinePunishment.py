@@ -147,7 +147,7 @@ class PunisherLoss(nn.Module):
         self.current_min_model = old_model
         self.current_min_epoch = self.epoch # Initialize best epoch for this run
 
-        saliency1 = self.compute_saliency_gradients().clone().detach()
+        saliency1 = self.compute_saliency_gradients()[0].clone().detach()
         self.start_time = time.time()
         self.measure_impact_pixels() 
 
@@ -164,7 +164,7 @@ class PunisherLoss(nn.Module):
             self.model.load_state_dict(self.current_min_model)
 
         self.measure_impact_pixels()
-        saliency2 = self.compute_saliency_gradients().clone().detach()
+        saliency2 = self.compute_saliency_gradients()[0].clone().detach()
 
         try:
             plotter = TrainingProgressPlotter()
@@ -209,7 +209,7 @@ class PunisherLoss(nn.Module):
             image = image.to(self.device)
             label = torch.tensor(label, device=self.device)
 
-            saliency_for_gui = self.compute_saliency_gradients(image.unsqueeze(0), label.unsqueeze(0))
+            saliency_for_gui, _ = self.compute_saliency_gradients(image.unsqueeze(0), label.unsqueeze(0))
 
             current_marked_pixels = None
             if idx in self.saliencies:
