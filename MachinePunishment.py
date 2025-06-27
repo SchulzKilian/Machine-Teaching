@@ -147,7 +147,8 @@ class PunisherLoss(nn.Module):
 
         final_loss = (alpha * classification_loss) + (beta * scaled_saliency_loss)
 
-        return final_loss  
+        return final_loss
+ 
 
     def old_backward(self):
         """
@@ -309,7 +310,7 @@ class PunisherLoss(nn.Module):
         label = self.label if use_internal_data else label
         
         if input_data is None: return None, None
-
+        input_data.requires_grad = True
         self.model.eval()
         input_data.requires_grad_()
         if input_data.grad is not None: input_data.grad.zero_()
