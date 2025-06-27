@@ -304,27 +304,32 @@ class PunisherLoss(nn.Module):
         """
         Computes saliency for a given batch of inputs and labels.
         Returns BOTH the raw, signed gradients and the classification loss.
-        """
-        use_internal_data = input_data is None
-        input_data = self.input if use_internal_data else input_data
-        label = self.label if use_internal_data else label
-        
-        if input_data is None: return None, None
-        input_data.requires_grad = True
-        self.model.eval()
-        input_data.requires_grad_()
-        if input_data.grad is not None: input_data.grad.zero_()
 
-        outputs = self.model(input_data)
-        classification_loss = self.default_loss(outputs, label)
-        
-        grads = torch.autograd.grad(classification_loss, input_data, create_graph=True, retain_graph=True)[0]
-        self.model.train()
-        
-        if use_internal_data:
-            self.gradients = grads
-        
-        return grads, classification_loss
+
+        """
+
+        with torch.enable_grad():
+
+            use_internal_data = input_data is None
+            input_data = self.input if use_internal_data else input_data
+            label = self.label if use_internal_data else label
+            
+            if input_data is None: return None, None
+            input_data.requires_grad = True
+            self.model.eval()
+            input_data.requires_grad_()
+            if input_data.grad is not None: input_data.grad.zero_()
+
+            outputs = self.model(input_data)
+            classification_loss = self.default_loss(outputs, label)
+            
+            grads = torch.autograd.grad(classification_loss, input_data, create_graph=True, retain_graph=True)[0]
+            self.model.train()
+            
+            if use_internal_data:
+                self.gradients = grads
+            
+            return grads, classification_loss
 
     def stop_condition(self):
         """Checks stop conditions based on aggregate metrics from the whole batch."""
