@@ -280,7 +280,7 @@ class PunisherLoss(nn.Module):
 
     def stop_condition(self):
         """Checks stop conditions based on aggregate metrics from the whole batch."""
-        if self.loss is None: return False # Should not run if loss hasn't been computed
+        if self.loss is None: return True # Should not run if loss hasn't been computed
 
         self.validation_loss = self.am_I_overfitting()
         self.validation_losses.append(self.validation_loss.item())
