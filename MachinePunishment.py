@@ -97,7 +97,7 @@ class PunisherLoss(nn.Module):
     def getloss(self, classification_loss):
         """
         Calculates a combined loss to balance classification accuracy and saliency matching.
-        This version is normalized to prevent exploding gradients.
+        This version is normalized and uses a correct reward signal to prevent exploding gradients.
         """
         batch_size = self.gradients.shape[0]
         if batch_size == 0:
@@ -112,13 +112,15 @@ class PunisherLoss(nn.Module):
             punish_mask = (mask_single > 0).float()
             reward_mask = (mask_single < 0).float()
 
-            # --- FIX: Normalize loss terms to prevent explosion ---
-            # Normalize by the number of pixels in the mask to get a "mean" error
             num_punish_pixels = torch.sum(punish_mask) + 1e-8
             num_reward_pixels = torch.sum(reward_mask) + 1e-8
 
             punish_loss = torch.sum(punish_mask * (grad_single**2)) / num_punish_pixels
-            reward_loss = torch.sum(reward_mask * (1 / (1 + grad_single**2))) / num_reward_pixels
+            
+            # --- FIX: Reward term must be negative ---
+            # The -1 turns this from a penalty into a reward. Minimizing this term
+            # now requires maximizing the saliency magnitude in the reward region.
+            reward_loss = torch.sum(-1 * reward_mask * (1 / (1 + grad_single**2))) / num_reward_pixels
             
             saliency_loss_single = punish_loss + reward_loss
             total_saliency_loss += saliency_loss_single
@@ -129,7 +131,6 @@ class PunisherLoss(nn.Module):
         alpha = 1.0  # Weight for classification loss
         beta = 1.0   # Weight for saliency loss
 
-        # A smaller scaling factor is needed now that the loss is normalized
         saliency_scale_factor = 1e3
         scaled_saliency_loss = avg_saliency_loss * saliency_scale_factor
 
@@ -158,6 +159,7 @@ class PunisherLoss(nn.Module):
 
         while True:
             self.gradients, classification_loss = self.compute_saliency_gradients()
+            if classification_loss is None: break # Stop if no gradients are computed
             self.loss = self.getloss(classification_loss)
             
             if not self.stop_condition():
@@ -173,6 +175,7 @@ class PunisherLoss(nn.Module):
 
         self.measure_impact_pixels()
         final_gradients, _ = self.compute_saliency_gradients()
+        if final_gradients is None: return # Can't visualize if grads are None
         # Use abs() for visualization
         saliency2 = torch.abs(final_gradients).clone().detach()
 
@@ -183,6 +186,11 @@ class PunisherLoss(nn.Module):
             print(f"Could not plot progress: {e}")
 
         try:
+            # Check if there are any validation losses to display
+            if not self.validation_losses:
+                print("No validation losses recorded to display.")
+                return
+
             image_window = ChoserWindow(saliency1[0].cpu(), f"Before, Val Loss {self.validation_losses[0]:.4f}", 
                                         saliency2[0].cpu(), f"After, Val Loss {self.validation_losses[-1]:.4f}")
             update = image_window.run()
@@ -232,9 +240,10 @@ class PunisherLoss(nn.Module):
                 except FileNotFoundError:
                      print(f"Error: Trimap for index {idx} not found.")
             else:
-                result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=torch.abs(saliency_for_gui.squeeze(0)).cpu())
-                if result and result["marked_pixels"] is not None:
-                    current_marked_pixels = result["marked_pixels"].to(self.device)
+                if saliency_for_gui is not None:
+                    result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=torch.abs(saliency_for_gui.squeeze(0)).cpu())
+                    if result and result["marked_pixels"] is not None:
+                        current_marked_pixels = result["marked_pixels"].to(self.device)
 
             if current_marked_pixels is not None:
                 if current_marked_pixels.dim() == 2:
