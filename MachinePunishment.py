@@ -70,16 +70,18 @@ class PunisherLoss(nn.Module):
             self.loss = None
             self.current_min_loss = float('inf')
             self.validation_losses = []
-            
-            # This function selects a batch of images and gets them annotated.
-            # It expects the whole dataset to select from.
             self.custom_loss_function(self.training_dataset)
-            
-            if self.input is None:
-                print("No images were annotated, skipping custom loss for this step.")
-                return torch.tensor(0.0, device=self.device, requires_grad=True)
 
-            return self
+            # --- NEW SIMPLIFIED LOGIC ---
+            # 2. Compute the saliency gradients and the standard classification loss
+            #    for the annotated batch.
+            self.gradients, classification_loss = self.compute_saliency_gradients()
+
+            # 3. Calculate the final, combined loss using your getloss function.
+            final_loss = self.getloss(classification_loss)
+
+            # 4. Return the single loss tensor. Your main training loop will call .backward() on this.
+            return final_loss
         else:
             # Default behavior: standard cross-entropy loss on the batch.
             # The 'inputs' variable here IS the model's output based on the traceback.
@@ -94,10 +96,10 @@ class PunisherLoss(nn.Module):
         labels = torch.tensor([dataset[i][1] for i in indices]).to(self.device)
         return images, labels
 
-    def getloss(self, classification_loss):
+    def getloss(self, classification_loss, kind="squared_error"):
         """
         Calculates a combined loss to balance classification accuracy and saliency matching.
-        This version is normalized and uses a correct reward signal to prevent exploding gradients.
+        This version is normalized to prevent exploding gradients.
         """
         batch_size = self.gradients.shape[0]
         if batch_size == 0:
@@ -108,37 +110,46 @@ class PunisherLoss(nn.Module):
         for i in range(batch_size):
             grad_single = self.gradients[i]
             mask_single = self.marked_pixels[i]
-
-            punish_mask = (mask_single > 0).float()
-            reward_mask = (mask_single < 0).float()
-
-            num_punish_pixels = torch.sum(punish_mask) + 1e-8
-            num_reward_pixels = torch.sum(reward_mask) + 1e-8
-
-            punish_loss = torch.sum(punish_mask * (grad_single**2)) / num_punish_pixels
             
-            # --- FIX: Reward term must be negative ---
-            # The -1 turns this from a penalty into a reward. Minimizing this term
-            # now requires maximizing the saliency magnitude in the reward region.
-            reward_loss = torch.sum(-1 * reward_mask * (1 / (1 + grad_single**2))) / num_reward_pixels
+            saliency_loss_single = 0.0
+            if kind == "squared_error":
+                punish_mask = (mask_single > 0).float()
+                reward_mask = (mask_single < 0).float()
+
+                num_punish_pixels = torch.sum(punish_mask) + 1e-8
+                num_reward_pixels = torch.sum(reward_mask) + 1e-8
+
+                punish_loss = torch.sum(punish_mask * (grad_single**2)) / num_punish_pixels
+                reward_loss = torch.sum(reward_mask * (1 / (1 + grad_single**2))) / num_reward_pixels
+                
+                saliency_loss_single = punish_loss + reward_loss
             
-            saliency_loss_single = punish_loss + reward_loss
+            elif kind == "huber_like_saliency":
+                threshold = 0.5  # Saliency magnitudes below this are ignored.
+                
+                # Create a mask for only those pixels where the saliency magnitude is significant.
+                significant_saliency_mask = (torch.abs(grad_single) > threshold).float()
+                
+                # Apply the squared error loss, but only on the significant pixels.
+                # The logic remains the same: punish positive mask values, reward negative ones.
+                saliency_loss_single = torch.sum(significant_saliency_mask * mask_single * (grad_single**2))
+
             total_saliency_loss += saliency_loss_single
         
         avg_saliency_loss = total_saliency_loss / batch_size
         
-        # --- COMBINED LOSS ---
-        alpha = 1.0  # Weight for classification loss
+        # Using a smaller weight for classification loss as requested.
+        alpha = 0.2  # Weight for classification loss
         beta = 1.0   # Weight for saliency loss
 
-        saliency_scale_factor = 1e3
+        saliency_scale_factor = 1e4 # Scale factor to bring saliency loss to a similar magnitude
         scaled_saliency_loss = avg_saliency_loss * saliency_scale_factor
 
         final_loss = (alpha * classification_loss) + (beta * scaled_saliency_loss)
 
-        return final_loss 
+        return final_loss  
 
-    def backward(self):
+    def old_backward(self):
         """
         This is the custom training loop. It fine-tunes the model based on the
         entire annotated batch stored in self.input, self.label, and self.marked_pixels.
@@ -160,7 +171,7 @@ class PunisherLoss(nn.Module):
         while True:
             self.gradients, classification_loss = self.compute_saliency_gradients()
             if classification_loss is None: break # Stop if no gradients are computed
-            self.loss = self.getloss(classification_loss)
+            self.loss = self.getloss(classification_loss, "huber_like_saliency")
             
             if not self.stop_condition():
                 break 

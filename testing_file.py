@@ -169,6 +169,7 @@ train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
 def decide_callback(epoch, number):
+    return True
     if number == 0:
         return True
     return False
@@ -193,7 +194,7 @@ for model in models:
 
     # Setup optimizer and criterion as you had them
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)
-    criterion = PunisherLoss(train_dataset,model, decide_callback, saliencies = trimap_paths_dict, optimizer=optimizer)
+    criterion = PunisherLoss(train_dataset,model, decide_callback, saliencies = trimap_paths_dict, teaching_batch=batch_size, optimizer=optimizer)
 
     print("\n--- Starting Training ---")
     model.train() # Set model to training mode
