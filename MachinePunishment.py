@@ -94,30 +94,45 @@ class PunisherLoss(nn.Module):
         labels = torch.tensor([dataset[i][1] for i in indices]).to(self.device)
         return images, labels
 
-    def getloss(self, kind="squared_error"):
+    def getloss(self, classification_loss):
         """
-        Calculates the custom loss for the entire annotated batch.
-        This version uses the squared error of the gradients, which is mathematically
-        robust for backpropagation and directly implements the user's goal.
+        Calculates a combined loss to balance classification accuracy and saliency matching.
         """
         batch_size = self.gradients.shape[0]
         if batch_size == 0:
             return 0.0
             
-        total_loss = 0.0
+        total_saliency_loss = 0.0
 
         for i in range(batch_size):
             grad_single = self.gradients[i]
             mask_single = self.marked_pixels[i]
 
-            # The loss is the sum of the squared gradients, weighted by the user's mask.
-            # Where mask is 1 (punish), it minimizes (gradients**2), pushing them to zero.
-            # Where mask is -1 (reward), it minimizes -(gradients**2), pushing magnitude up.
-            loss_single = torch.sum(mask_single * (grad_single**2))
-            
-            total_loss += loss_single
+            punish_mask = (mask_single > 0).float()  # Where mask is 1
+            reward_mask = (mask_single < 0).float()  # Where mask is -1
 
-        return total_loss / batch_size * 1e6
+            punish_loss = torch.sum(punish_mask * (grad_single**2))
+            reward_loss = torch.sum(reward_mask * (1 / (1 + grad_single**2)))
+
+            saliency_loss_single = punish_loss + reward_loss
+            total_saliency_loss += saliency_loss_single
+        
+        avg_saliency_loss = total_saliency_loss / batch_size
+        
+        # --- COMBINED LOSS ---
+        # Define weights to balance the two objectives. You can tune these.
+        alpha = 0.5  # Weight for the original classification loss
+        beta = 1.0   # Weight for the new saliency loss
+
+        # Scale the saliency loss to be on a similar magnitude as the classification loss
+        saliency_scale_factor = 1e4
+        scaled_saliency_loss = avg_saliency_loss * saliency_scale_factor
+
+        # The final loss is a weighted sum of both objectives.
+        # This forces the optimizer to improve saliency while not hurting accuracy.
+        final_loss = (alpha * classification_loss) + (beta * scaled_saliency_loss)
+
+        return final_loss 
 
     def backward(self):
         """
