@@ -152,8 +152,8 @@ class PunisherLoss(nn.Module):
         self.measure_impact_pixels() 
 
         while self.stop_condition():
-            self.gradients = self.compute_saliency_gradients()
-            self.loss = self.getloss()
+            self.gradients, classification_loss = self.compute_saliency_gradients()
+            self.loss = self.getloss(classification_loss)
             
             self.optimizer.zero_grad() 
             self.loss.backward(retain_graph=True) 
@@ -298,9 +298,9 @@ class PunisherLoss(nn.Module):
         self.model.train()
         
         if use_internal_data:
-            self.gradients = torch.abs(grads)
+            self.gradients = grads
         
-        return torch.abs(grads)
+        return grads, loss
 
     def stop_condition(self):
         """Checks stop conditions based on aggregate metrics from the whole batch."""
