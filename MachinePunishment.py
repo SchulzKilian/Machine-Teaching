@@ -94,10 +94,11 @@ class PunisherLoss(nn.Module):
         labels = torch.tensor([dataset[i][1] for i in indices]).to(self.device)
         return images, labels
 
-    def getloss(self, kind="normalized_softm"):
+    def getloss(self, kind="squared_error"):
         """
         Calculates the custom loss for the entire annotated batch.
-        It processes each image-mask pair independently and sums the results.
+        This version uses the squared error of the gradients, which is mathematically
+        robust for backpropagation and directly implements the user's goal.
         """
         batch_size = self.gradients.shape[0]
         if batch_size == 0:
@@ -109,18 +110,10 @@ class PunisherLoss(nn.Module):
             grad_single = self.gradients[i]
             mask_single = self.marked_pixels[i]
 
-            if kind == "classic":
-                loss_single = torch.sum(mask_single * torch.clamp(grad_single, min=-0.5, max=0.5))
-            elif kind == "normalized":
-                loss_single = torch.sum(mask_single * torch.clamp(grad_single, min=-0.5, max=0.5)) / (torch.sum(grad_single) + 1e-8)
-            elif kind == "normalized_softm":
-                g_min = grad_single.min()
-                g_max = grad_single.max()
-                gradients_normalized = (grad_single - g_min) / (g_max - g_min + 1e-8)
-                
-                custom_loss = torch.sum(mask_single * gradients_normalized) / (torch.sum(gradients_normalized) + 1e-8)
-                l2_reg = torch.mean(grad_single**2)
-                loss_single = custom_loss + l2_reg*0.1
+            # The loss is the sum of the squared gradients, weighted by the user's mask.
+            # Where mask is 1 (punish), it minimizes (gradients**2), pushing them to zero.
+            # Where mask is -1 (reward), it minimizes -(gradients**2), pushing magnitude up.
+            loss_single = torch.sum(mask_single * (grad_single**2))
             
             total_loss += loss_single
 
