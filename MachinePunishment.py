@@ -97,6 +97,7 @@ class PunisherLoss(nn.Module):
     def getloss(self, classification_loss):
         """
         Calculates a combined loss to balance classification accuracy and saliency matching.
+        This version is normalized to prevent exploding gradients.
         """
         batch_size = self.gradients.shape[0]
         if batch_size == 0:
@@ -108,28 +109,30 @@ class PunisherLoss(nn.Module):
             grad_single = self.gradients[i]
             mask_single = self.marked_pixels[i]
 
-            punish_mask = (mask_single > 0).float()  # Where mask is 1
-            reward_mask = (mask_single < 0).float()  # Where mask is -1
+            punish_mask = (mask_single > 0).float()
+            reward_mask = (mask_single < 0).float()
 
-            punish_loss = torch.sum(punish_mask * (grad_single**2))
-            reward_loss = torch.sum(reward_mask * (1 / (1 + grad_single**2)))
+            # --- FIX: Normalize loss terms to prevent explosion ---
+            # Normalize by the number of pixels in the mask to get a "mean" error
+            num_punish_pixels = torch.sum(punish_mask) + 1e-8
+            num_reward_pixels = torch.sum(reward_mask) + 1e-8
 
+            punish_loss = torch.sum(punish_mask * (grad_single**2)) / num_punish_pixels
+            reward_loss = torch.sum(reward_mask * (1 / (1 + grad_single**2))) / num_reward_pixels
+            
             saliency_loss_single = punish_loss + reward_loss
             total_saliency_loss += saliency_loss_single
         
         avg_saliency_loss = total_saliency_loss / batch_size
         
         # --- COMBINED LOSS ---
-        # Define weights to balance the two objectives. You can tune these.
-        alpha = 0.5  # Weight for the original classification loss
-        beta = 1.0   # Weight for the new saliency loss
+        alpha = 1.0  # Weight for classification loss
+        beta = 1.0   # Weight for saliency loss
 
-        # Scale the saliency loss to be on a similar magnitude as the classification loss
-        saliency_scale_factor = 1e4
+        # A smaller scaling factor is needed now that the loss is normalized
+        saliency_scale_factor = 1e3
         scaled_saliency_loss = avg_saliency_loss * saliency_scale_factor
 
-        # The final loss is a weighted sum of both objectives.
-        # This forces the optimizer to improve saliency while not hurting accuracy.
         final_loss = (alpha * classification_loss) + (beta * scaled_saliency_loss)
 
         return final_loss 
@@ -147,14 +150,19 @@ class PunisherLoss(nn.Module):
         self.current_min_model = old_model
         self.current_min_epoch = self.epoch # Initialize best epoch for this run
 
-        saliency1 = self.compute_saliency_gradients()[0].clone().detach()
+        initial_gradients, initial_classification_loss = self.compute_saliency_gradients()
+        # Use abs() for visualization
+        saliency1 = torch.abs(initial_gradients).clone().detach()
         self.start_time = time.time()
         self.measure_impact_pixels() 
 
-        while self.stop_condition():
+        while True:
             self.gradients, classification_loss = self.compute_saliency_gradients()
             self.loss = self.getloss(classification_loss)
             
+            if not self.stop_condition():
+                break 
+
             self.optimizer.zero_grad() 
             self.loss.backward(retain_graph=True) 
             self.adjust_weights_according_grad() 
@@ -164,7 +172,9 @@ class PunisherLoss(nn.Module):
             self.model.load_state_dict(self.current_min_model)
 
         self.measure_impact_pixels()
-        saliency2 = self.compute_saliency_gradients()[0].clone().detach()
+        final_gradients, _ = self.compute_saliency_gradients()
+        # Use abs() for visualization
+        saliency2 = torch.abs(final_gradients).clone().detach()
 
         try:
             plotter = TrainingProgressPlotter()
@@ -173,7 +183,6 @@ class PunisherLoss(nn.Module):
             print(f"Could not plot progress: {e}")
 
         try:
-            # We show the FIRST image from the batch as a representative example.
             image_window = ChoserWindow(saliency1[0].cpu(), f"Before, Val Loss {self.validation_losses[0]:.4f}", 
                                         saliency2[0].cpu(), f"After, Val Loss {self.validation_losses[-1]:.4f}")
             update = image_window.run()
@@ -223,12 +232,11 @@ class PunisherLoss(nn.Module):
                 except FileNotFoundError:
                      print(f"Error: Trimap for index {idx} not found.")
             else:
-                result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=saliency_for_gui.squeeze(0).cpu())
+                result = self.saliency_drawer.get_user_markings(image.cpu(), gradients=torch.abs(saliency_for_gui.squeeze(0)).cpu())
                 if result and result["marked_pixels"] is not None:
                     current_marked_pixels = result["marked_pixels"].to(self.device)
 
             if current_marked_pixels is not None:
-                # The marked pixels mask should match the image channels (e.g., 3 for RGB)
                 if current_marked_pixels.dim() == 2:
                     current_marked_pixels = current_marked_pixels.unsqueeze(0).expand(image.shape[0], -1, -1)
                 
@@ -253,59 +261,53 @@ class PunisherLoss(nn.Module):
         on positively and negatively marked pixels. This now uses the correct logic.
         """
         if self.marked_pixels is not None and self.gradients is not None:
-            # Detach gradients to prevent any tracking during this calculation
-            gradients = self.gradients.clone().detach()
+            # --- FIX: Use torch.abs() for logging to measure magnitude ---
+            gradients = torch.abs(self.gradients.clone().detach())
 
-            # Create masks for positive and negative user markings
-            # Note: Negative markings are 1, positive markings are -1 in the original mask.
-            # So positive_pixels will have 1s where markings were -1.
             self.negative_pixels = torch.clamp(self.marked_pixels, min=0) 
             self.positive_pixels = abs(torch.clamp(self.marked_pixels, max=0))
 
-            # Calculate the total magnitude of the saliency map across the whole batch
             total_gradient_sum = torch.sum(gradients).item()
 
             if total_gradient_sum > 1e-8:
-                # Calculate the sum of saliency that falls ONLY on negatively marked pixels
                 neg_impact_sum = torch.sum(self.negative_pixels * gradients).item()
-                # Calculate the sum of saliency that falls ONLY on positively marked pixels
                 pos_impact_sum = torch.sum(self.positive_pixels * gradients).item()
                 
-                # Calculate the percentage
                 neg_perc = neg_impact_sum / total_gradient_sum
                 pos_perc = pos_impact_sum / total_gradient_sum
 
                 print(f"Saliency on negatively marked areas: {neg_perc:.2%}")
                 print(f"Saliency on positively marked areas: {pos_perc:.2%}")
 
-
     def compute_saliency_gradients(self, input_data=None, label=None):
-        """Computes saliency for a given batch of inputs and labels."""
+        """
+        Computes saliency for a given batch of inputs and labels.
+        Returns BOTH the raw, signed gradients and the classification loss.
+        """
         use_internal_data = input_data is None
         input_data = self.input if use_internal_data else input_data
         label = self.label if use_internal_data else label
         
-        if input_data is None: return None
+        if input_data is None: return None, None
 
         self.model.eval()
         input_data.requires_grad_()
         if input_data.grad is not None: input_data.grad.zero_()
 
         outputs = self.model(input_data)
-        loss = self.default_loss(outputs, label)
+        classification_loss = self.default_loss(outputs, label)
         
-        grads = torch.autograd.grad(loss, input_data, create_graph=True, retain_graph=True)[0]
+        grads = torch.autograd.grad(classification_loss, input_data, create_graph=True, retain_graph=True)[0]
         self.model.train()
         
         if use_internal_data:
             self.gradients = grads
         
-        return grads, loss
+        return grads, classification_loss
 
     def stop_condition(self):
         """Checks stop conditions based on aggregate metrics from the whole batch."""
-        if self.loss is None: return True # Should not run if loss hasn't been computed
-
+        # This check is now safe because self.loss is guaranteed to have a value.
         self.validation_loss = self.am_I_overfitting()
         self.validation_losses.append(self.validation_loss.item())
         print(f"Fine-tuning iter... Val Loss: {self.validation_loss.item():.4f}, Custom Loss: {self.loss.item():.4f}")
@@ -316,10 +318,12 @@ class PunisherLoss(nn.Module):
             self.current_min_model = self.model.state_dict()
 
         if self.gradients is not None:
-            total_gradient_sum = torch.sum(self.gradients).item()
+            # --- FIX: Use torch.abs() for logging to measure magnitude ---
+            abs_gradients = torch.abs(self.gradients)
+            total_gradient_sum = torch.sum(abs_gradients).item()
             if total_gradient_sum > 1e-8:
-                pos_perc = torch.sum(self.positive_pixels * self.gradients).item() / total_gradient_sum
-                neg_perc = torch.sum(self.negative_pixels * self.gradients).item() / total_gradient_sum
+                pos_perc = torch.sum(self.positive_pixels * abs_gradients).item() / total_gradient_sum
+                neg_perc = torch.sum(self.negative_pixels * abs_gradients).item() / total_gradient_sum
                 self.positive_percentage.append(pos_perc)
                 self.negative_percentage.append(neg_perc)
 
@@ -329,7 +333,4 @@ class PunisherLoss(nn.Module):
         converged = stop_conditions.stop_for_pixel_loss(self.positive_percentage, self.negative_percentage)
         if converged: print("Stopping: Pixel impact has converged.")
 
-        validation = stop_conditions.stop_for_validation(self.validation_losses)
-        if validation: print("Stopping: Validation loss has gotten worse.")
-
-        return not (time_up or converged or validation)
+        return not (time_up or converged)
