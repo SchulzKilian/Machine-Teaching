@@ -117,7 +117,7 @@ class PunisherLoss(nn.Module):
             
             total_loss += loss_single
 
-        return total_loss / batch_size
+        return total_loss / batch_size * 1e6
 
     def backward(self):
         """
