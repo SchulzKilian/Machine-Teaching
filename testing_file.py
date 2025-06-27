@@ -5,7 +5,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset
 #from GuidedCNN import GuidedCNN
-from torchvision.models import resnet34, resnet18
+from torchvision.models import resnet34, resnet18, resnet50
 from collections import Counter
 # from StandardCNN import ResNet50, SimpleCNN, SimplestCNN
 from MachinePunishment import PunisherLoss
@@ -159,10 +159,7 @@ if arg != "catsvdogs":
     train_dataset = SubsetDataset(train_dataset)
     test_dataset = SubsetDataset(test_dataset)
     # Initialize the dictionary to hold the masks
-    punishment_masks = {}
-    trimap_transform = transforms.Compose([
-        transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.NEAREST),
-    ])
+
     trimap_paths_dict = {
         i: train_dataset.dataset._segs[i] 
         for i in range(len(train_dataset))
