@@ -1,5 +1,5 @@
 def stop_for_validation(validation_losses):
-    if len(validation_losses) < 4:
+    if len(validation_losses) < 3:
         return False
     else:
         y1, y2 = sum(validation_losses[-4:-2]) / 2, sum(validation_losses[-2:]) / 2

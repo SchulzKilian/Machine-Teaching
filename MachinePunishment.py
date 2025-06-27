@@ -314,4 +314,7 @@ class PunisherLoss(nn.Module):
         converged = stop_conditions.stop_for_pixel_loss(self.positive_percentage, self.negative_percentage)
         if converged: print("Stopping: Pixel impact has converged.")
 
-        return not (time_up or converged)
+        validation = stop_conditions.stop_for_pixel_loss(self.validation_losses)
+        if validation: print("Stopping: Validation loss has gotten worse.")
+
+        return not (time_up or converged or validation)
