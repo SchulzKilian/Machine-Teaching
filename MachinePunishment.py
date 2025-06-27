@@ -240,21 +240,37 @@ class PunisherLoss(nn.Module):
         return self
 
     def measure_impact_pixels(self):
-        """Measures the impact on the entire annotated batch."""
+        """
+        Measures the percentage of the total saliency map's magnitude that falls
+        on positively and negatively marked pixels. This now uses the correct logic.
+        """
         if self.marked_pixels is not None and self.gradients is not None:
-            self.negative_pixels = torch.clamp(self.marked_pixels, min=0)
-            self.positive_pixels = abs(torch.clamp(self.marked_pixels, max=0))
-            
-            binary_gradients = self.gradients.clone().detach()
-            binary_gradients[binary_gradients != 0] = 1
-            
-            total_gradient_sum = torch.sum(binary_gradients).item()
-            if total_gradient_sum > 0:
-                neg_impact = torch.sum(self.negative_pixels * binary_gradients).item() / total_gradient_sum
-                pos_impact = torch.sum(self.positive_pixels * binary_gradients).item() / total_gradient_sum
-                print(f"Impact on negatively marked areas (across batch): {neg_impact:.2%}")
-                print(f"Impact on positively marked areas (across batch): {pos_impact:.2%}")
+            # Detach gradients to prevent any tracking during this calculation
+            gradients = self.gradients.clone().detach()
 
+            # Create masks for positive and negative user markings
+            # Note: Negative markings are 1, positive markings are -1 in the original mask.
+            # So positive_pixels will have 1s where markings were -1.
+            self.negative_pixels = torch.clamp(self.marked_pixels, min=0) 
+            self.positive_pixels = abs(torch.clamp(self.marked_pixels, max=0))
+
+            # Calculate the total magnitude of the saliency map across the whole batch
+            total_gradient_sum = torch.sum(gradients).item()
+
+            if total_gradient_sum > 1e-8:
+                # Calculate the sum of saliency that falls ONLY on negatively marked pixels
+                neg_impact_sum = torch.sum(self.negative_pixels * gradients).item()
+                # Calculate the sum of saliency that falls ONLY on positively marked pixels
+                pos_impact_sum = torch.sum(self.positive_pixels * gradients).item()
+                
+                # Calculate the percentage
+                neg_perc = neg_impact_sum / total_gradient_sum
+                pos_perc = pos_impact_sum / total_gradient_sum
+
+                print(f"Saliency on negatively marked areas: {neg_perc:.2%}")
+                print(f"Saliency on positively marked areas: {pos_perc:.2%}")
+
+                
     def compute_saliency_gradients(self, input_data=None, label=None):
         """Computes saliency for a given batch of inputs and labels."""
         use_internal_data = input_data is None
