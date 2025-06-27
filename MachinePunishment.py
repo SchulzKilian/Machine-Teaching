@@ -120,7 +120,7 @@ class PunisherLoss(nn.Module):
                 
                 custom_loss = torch.sum(mask_single * gradients_normalized) / (torch.sum(gradients_normalized) + 1e-8)
                 l2_reg = torch.mean(grad_single**2)
-                loss_single = custom_loss + l2_reg
+                loss_single = custom_loss + l2_reg*0.1
             
             total_loss += loss_single
 
@@ -270,7 +270,7 @@ class PunisherLoss(nn.Module):
                 print(f"Saliency on negatively marked areas: {neg_perc:.2%}")
                 print(f"Saliency on positively marked areas: {pos_perc:.2%}")
 
-                
+
     def compute_saliency_gradients(self, input_data=None, label=None):
         """Computes saliency for a given batch of inputs and labels."""
         use_internal_data = input_data is None
